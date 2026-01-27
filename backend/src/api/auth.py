@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -77,7 +77,11 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)) -> LoginResponse:
+async def login(
+    request: LoginRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db)
+) -> LoginResponse:
     """Login user.
 
     Args:
@@ -90,11 +94,10 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)) -> Lo
     Raises:
         HTTPException: If credentials are invalid
     """
-    # 1. Find user by email + project_id
+    # 1. Find user by email (project_id comes from DB)
     result = await db.execute(
         select(MarketingUser).where(
-            MarketingUser.email == request.email,
-            MarketingUser.project_id == request.project_id
+            MarketingUser.email == request.email
         )
     )
     user = result.scalar_one_or_none()
@@ -123,6 +126,17 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)) -> Lo
         "project_id": str(user.project_id)
     })
 
+    # ✅ GOTCHA 10: Set httpOnly cookie for Next.js middleware
+    response.set_cookie(
+        key="auth_token",
+        value=token,
+        httponly=True,  # Not accessible from JavaScript
+        secure=False,  # Set True in production with HTTPS
+        samesite="lax",
+        max_age=604800,  # 7 days
+        path="/"
+    )
+
     return LoginResponse(
         access_token=token,
         token_type="bearer",
@@ -133,6 +147,26 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)) -> Lo
             "project_id": str(user.project_id)
         }
     )
+
+
+@router.post("/logout")
+async def logout(response: Response) -> dict:
+    """
+    Logout user by clearing auth cookie.
+
+    Args:
+        response: FastAPI response
+
+    Returns:
+        Success message
+    """
+    # Clear auth_token cookie
+    response.delete_cookie(
+        key="auth_token",
+        path="/"
+    )
+
+    return {"message": "Logged out successfully"}
 
 
 @router.post("/request-password-reset", response_model=RequestPasswordResetResponse)

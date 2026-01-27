@@ -4232,7 +4232,7 @@ data: [DONE]
   - **clean-code** (código limpio y mantenible)
 
 **Objetivo:**
-Crear estructura base del frontend con autenticación, layout, y navegación usando Next.js 14 App Router.
+Crear estructura base del frontend con autenticación, layout, y navegación usando Next.js 14 App Router, toma en cuenta que mas adelant el proyecto se desplegara en vercel.
 
 **⚠️ GOTCHA CRÍTICO APLICADO:**
 **GOTCHA 10 - JWT en localStorage + Server Components**

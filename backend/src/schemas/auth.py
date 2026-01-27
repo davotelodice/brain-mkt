@@ -34,7 +34,7 @@ class LoginRequest(BaseModel):
     """User login request."""
     email: EmailStr
     password: str
-    project_id: UUID
+    # NOTE: project_id NO es requerido - se obtiene de la DB
 
 
 class LoginResponse(BaseModel):

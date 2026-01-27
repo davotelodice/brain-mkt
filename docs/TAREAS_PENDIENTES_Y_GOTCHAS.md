@@ -874,12 +874,218 @@ data: [DONE]
 
 ```
 
-### Próximos Pasos (TAREA 7+)
+#### Error 4: Login Requería project_id Innecesariamente - **✅ RESUELTO**
+- **Error:** `{"detail":[{"type":"missing","loc":["body","project_id"],"msg":"Field required"}]}`
+- **Causa:** Schema `LoginRequest` requería `project_id` que el usuario no debería conocer
+- **Problema de diseño:** En multi-tenancy, el usuario NO conoce su UUID de proyecto
+- **Solución:** 
+  - Removido `project_id` de `LoginRequest` schema
+  - Login ahora busca por `email` únicamente
+  - `project_id` se obtiene automáticamente de la DB del usuario
+- **Archivos corregidos:**
+  - `backend/src/schemas/auth.py` - Removido campo `project_id`
+  - `backend/src/api/auth.py` - Query ahora filtra solo por `email`
+- **Lección:** En multi-tenancy, project_id es dato interno, NO input de usuario
 
-1. **Frontend (TAREA 7)**: Next.js 14 Auth (login, register, recover)
-2. **Frontend Chat (TAREA 8)**: Consumir endpoint `/stream` con EventSource
-3. **Content Generator Agent**: Implementar streaming real de generación de contenido
+### Próximos Pasos (TAREA 8+)
+
+1. **Frontend Chat (TAREA 8)**: Consumir endpoint `/stream` con EventSource
+2. **Content Generator Agent**: Implementar streaming real de generación de contenido
+3. **Docker & Deployment**: Configurar contenedores y deployment
 
 ---
 
-**Última actualización**: 2026-01-27 02:00 UTC
+## ✅ TAREA 7: Frontend Auth (Next.js 14)
+
+**Estado**: ✅ Completada  
+**Fecha**: 2026-01-27
+
+### Implementación
+
+**Objetivo**: Crear estructura base del frontend con autenticación usando Next.js 14 App Router, cookies httpOnly y middleware de protección de rutas.
+
+**Componentes implementados:**
+1. ✅ **Proyecto Next.js 14**: TypeScript + Tailwind + App Router + Turbopack
+2. ✅ **Middleware de autenticación**: Protege rutas privadas con cookies httpOnly
+3. ✅ **Páginas de auth**: Login, Register con validación y error handling
+4. ✅ **Layout base**: Header, navegación, footer
+5. ✅ **API client**: Utilities centralizadas en `lib/api.ts`
+6. ✅ **Backend cookies**: Login y logout setean/limpian cookie `auth_token`
+
+### Archivos Creados (Frontend)
+
+**Estructura:**
+```
+frontend/
+├── middleware.ts              # Auth middleware con GOTCHA 10
+├── app/
+│   ├── layout.tsx            # Layout raíz (Server Component)
+│   ├── page.tsx              # Homepage/Dashboard
+│   ├── login/page.tsx        # Login (Client Component)
+│   ├── register/page.tsx     # Register (Client Component)
+│   └── components/
+│       └── LogoutButton.tsx  # Logout button (Client Component)
+├── lib/
+│   └── api.ts                # API utilities (login, register, logout)
+├── .env.local                # Variables de entorno
+├── .env.example              # Template de variables
+└── README.md                 # Documentación del frontend
+```
+
+**Dependencias instaladas:**
+- `next@14.2.30` - Framework
+- `react@18`, `react-dom@18` - Core
+- `typescript` - Tipado
+- `tailwindcss` - Estilos
+- `zustand@5.0.2` - State management (para TAREA 8)
+- `@tanstack/react-query@5.62.11` - Server state (para TAREA 8)
+
+### Archivos Modificados (Backend)
+
+- `backend/src/api/auth.py`:
+  - ✅ Endpoint `/login` ahora setea cookie `auth_token` (httpOnly)
+  - ✅ Nuevo endpoint `/logout` que limpia la cookie
+  - ✅ Login ya NO requiere `project_id` en el body (solo email + password)
+  
+- `backend/src/schemas/auth.py`:
+  - ✅ `LoginRequest` schema corregido (removido campo `project_id`)
+
+### ⚠️ Errores Encontrados y Soluciones
+
+#### Error 1: Login Requería project_id - **✅ RESUELTO**
+- **Error:** `{"detail":[{"type":"missing","loc":["body","project_id"],"msg":"Field required"}]}`
+- **Causa:** Schema `LoginRequest` requería `project_id` que el usuario no conoce
+- **Solución:** 
+  - Removido `project_id` de `LoginRequest`
+  - Login busca solo por `email` (project_id viene de DB)
+- **Herramienta usada:** Serena `find_symbol` analizó schemas y endpoints
+- **Lección:** En multi-tenancy, `project_id` es dato interno, NO input de usuario
+
+#### Error 2: ESLint Warnings en api.ts - **✅ RESUELTO**
+- **Error 1:** `Unexpected any` en `ApiResponse<T = any>`
+- **Error 2:** Variables `err` no usadas en catch blocks
+- **Solución:**
+  - Cambiar `any` a `unknown` en generic type
+  - Remover variables `err` de catch (solo `catch { ... }`)
+- **Build status:** ✅ Compilado exitosamente
+
+### Gotchas Aplicados
+
+#### GOTCHA 10 - JWT en Cookies httpOnly (vs localStorage)
+
+**Problema**: `localStorage` no es accesible en Server Components de Next.js  
+**Solución**: Backend setea cookie httpOnly, middleware de Next.js la lee
+
+**Backend (FastAPI):**
+```python
+response.set_cookie(
+    key="auth_token",
+    value=token,
+    httponly=True,      # NO accesible desde JavaScript
+    secure=False,       # True en production (HTTPS)
+    samesite="lax",
+    max_age=604800,     # 7 días
+    path="/"
+)
+```
+
+**Frontend (Next.js middleware):**
+```typescript
+const token = request.cookies.get('auth_token')?.value
+
+if (!token && !isPublicPath) {
+  return NextResponse.redirect('/login')
+}
+```
+
+#### GOTCHA 4 - Server Components vs Client Components
+
+**Regla**: Por defecto todos son **Server Components** (no pueden usar useState, useEffect)
+
+**Client Components requieren:**
+- Directiva `'use client'` al inicio del archivo
+- Se usan para: formularios, botones, interactividad
+
+**Implementado en:**
+- ✅ `login/page.tsx` - Formulario con useState
+- ✅ `register/page.tsx` - Formulario con useState
+- ✅ `LogoutButton.tsx` - Botón con onClick handler
+
+### Herramientas Utilizadas
+
+1. **Archon RAG**:
+   - ✅ `rag_search_knowledge_base`: Next.js authentication patterns
+   - ✅ `rag_search_code_examples`: httpOnly cookies examples
+
+2. **Serena**:
+   - ✅ `find_symbol`: Analizó `LoginRequest`, `RegisterRequest`, endpoints
+   - ✅ Detectó inconsistencia de `project_id` en login
+
+### Skills Aplicadas
+
+1. **nextjs-best-practices:**
+   - ✅ Server Components por defecto
+   - ✅ `'use client'` solo en componentes interactivos
+   - ✅ App Router file conventions
+
+2. **react-patterns:**
+   - ✅ Componentes pequeños y enfocados
+   - ✅ Separation of concerns (Server vs Client)
+   - ✅ Custom utilities en `lib/`
+
+3. **tailwind-patterns:**
+   - ✅ Sistema de colores consistente
+   - ✅ Gradientes y sombras modernas
+   - ✅ Responsive design con clases utilitarias
+
+4. **clean-code:**
+   - ✅ Código minimalista
+   - ✅ Nombres descriptivos
+   - ✅ Comentarios solo para GOTCHAs críticos
+
+### Testing Manual
+
+#### 1. Iniciar Frontend
+
+```bash
+cd frontend
+npm run dev
+# Abre http://localhost:3000
+```
+
+#### 2. Flujo de Prueba
+
+1. **Navega a:** `http://localhost:3000`
+   - ✅ Debería redirigir a `/login` (no hay cookie)
+
+2. **Ir a Register:** Click en "¿No tienes cuenta?"
+   - ✅ Formulario de registro visible
+   - ✅ Project ID pre-rellenado con UUID de test
+
+3. **Registrar usuario:**
+   - Email: `frontend@test.com`
+   - Password: `Frontend123` (mínimo 8, 1 mayúscula, 1 número)
+   - Full Name: `Frontend User`
+   - ✅ Debería redirigir a `/login?registered=true`
+
+4. **Login:**
+   - Email: `frontend@test.com`
+   - Password: `Frontend123`
+   - ✅ Cookie `auth_token` seteada
+   - ✅ Redirige a `/` (homepage)
+
+5. **Logout:**
+   - Click en "Cerrar Sesión"
+   - ✅ Cookie limpiada
+   - ✅ Redirige a `/login`
+
+### Próximos Pasos (TAREA 8)
+
+1. **Chat Interface**: Componente de chat con streaming SSE
+2. **EventSource**: Consumir `/api/chats/{id}/stream`
+3. **Message List**: Display de mensajes user/assistant
+4. **Document Upload**: Subida de archivos (.txt, .pdf, .docx)
+
+---
+
+**Última actualización**: 2026-01-27 02:30 UTC
