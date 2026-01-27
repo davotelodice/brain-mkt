@@ -129,7 +129,8 @@ class MemoryManager:
         persona = result.scalar_one_or_none()
 
         if persona:
-            return persona.persona_data
+            # Return full_analysis (contains complete buyer persona JSON)
+            return persona.full_analysis if persona.full_analysis else {}
 
         return None
 

@@ -4621,6 +4621,207 @@ Solución: Directiva `'use client'` al inicio de componentes interactivos.
 
 ---
 
+### TAREA 8.1: Memoria de Conversación, Contexto Largo y Visualización de Datos
+
+**Herramientas a utilizar:**
+- 🔧 MCP Serena: Analizar implementación actual de memoria
+- ⚡ MCP Archon: Documentación de LangChain memory patterns
+- 📚 Skills:
+  - **conversation-memory** (memoria persistente de conversaciones)
+  - **context-window-management** (gestión de contexto largo)
+  - **agent-memory-systems** (arquitectura de memoria)
+  - **frontend-design** (UI para visualización)
+  - python-patterns (automático)
+  - clean-code (automático)
+
+**⚠️ PROBLEMAS IDENTIFICADOS (Ver `docs/DIAGNOSTICO_MEMORIA_Y_CONTEXTO.md`):**
+
+1. **Memoria de conversación NO se carga**: El agente no recuerda mensajes anteriores
+2. **Router detecta TODO como contenido**: Keywords muy amplias activan siempre CONTENT_GENERATION
+3. **No hay forma de ver buyer persona**: No hay endpoints/UI para visualizar datos generados
+4. **Agentes faltantes**: Forum Simulator, Pain Points, Customer Journey no implementados
+5. **RAG vs Contexto Largo**: Documentos solo se consultan, no están siempre en contexto
+
+**Objetivo:**
+Corregir sistema de memoria, mejorar detección de intenciones, crear visualización de datos, e implementar contexto largo para documentos.
+
+**Pasos a seguir:**
+
+#### PASO 1: Cargar Historial de Conversación
+
+**Problema:** `load_chat_history()` existe pero nunca se llama.
+
+**Solución:**
+1. Modificar `GET /api/chats/{chat_id}` para cargar historial al abrir chat
+2. Modificar `POST /api/chats/{chat_id}/messages` para cargar historial antes de procesar
+3. Modificar `POST /api/chats/{chat_id}/stream` para cargar historial antes de streaming
+
+**Archivos a modificar:**
+- `backend/src/api/chat.py` - agregar llamadas a `memory_manager.load_chat_history()`
+
+**Criterios:**
+- [ ] Al abrir un chat, se cargan últimos 20 mensajes
+- [ ] `ConversationBufferWindowMemory` está poblado antes de procesar nuevos mensajes
+- [ ] El agente puede referirse a mensajes anteriores
+
+---
+
+#### PASO 2: Mejorar Detección de Solicitudes de Contenido
+
+**Problema:** Keywords muy amplias detectan cualquier mensaje como solicitud de contenido.
+
+**Solución:**
+1. Usar LLM para detectar intención (más preciso)
+2. O mejorar keywords con contexto:
+   - Verificar que sea solicitud explícita (no pregunta)
+   - Considerar contexto de conversación
+   - No activar si usuario está respondiendo preguntas del agente
+
+**Archivos a modificar:**
+- `backend/src/agents/router_agent.py` - mejorar `_is_content_request()` o usar LLM
+
+**Criterios:**
+- [ ] Solo activa CONTENT_GENERATION con solicitudes explícitas
+- [ ] Puede mantener conversación normal sin generar contenido
+- [ ] Considera contexto de mensajes anteriores
+
+---
+
+#### PASO 3: Crear Endpoints API para Visualizar Datos
+
+**Problema:** No hay forma de ver buyer persona, foro, puntos de dolor, customer journey.
+
+**Solución:**
+1. Crear nuevos endpoints:
+   - `GET /api/chats/{chat_id}/buyer-persona` - Obtener buyer persona completo
+   - `GET /api/chats/{chat_id}/forum-simulation` - Obtener simulación de foro
+   - `GET /api/chats/{chat_id}/pain-points` - Obtener puntos de dolor
+   - `GET /api/chats/{chat_id}/customer-journey` - Obtener customer journey
+   - `GET /api/chats/{chat_id}/analysis` - Obtener todo el análisis (resumen)
+
+2. Crear schemas de respuesta:
+   - `backend/src/schemas/buyer_persona.py` - Schemas para respuestas
+
+**Archivos a crear:**
+- `backend/src/api/buyer_persona.py` - Nuevos endpoints
+- `backend/src/schemas/buyer_persona.py` - Schemas de respuesta
+
+**Criterios:**
+- [ ] Endpoints retornan datos en formato JSON estructurado
+- [ ] Manejo de errores si no existe buyer persona
+- [ ] Validación de permisos (solo usuario del proyecto)
+
+---
+
+#### PASO 4: Crear Componentes Frontend para Visualización
+
+**Problema:** No hay UI para ver los datos generados.
+
+**Solución:**
+1. Crear componentes React:
+   - `BuyerPersonaView.tsx` - Visualizar buyer persona completo
+   - `ForumSimulationView.tsx` - Visualizar simulación de foro
+   - `PainPointsView.tsx` - Visualizar puntos de dolor
+   - `CustomerJourneyView.tsx` - Visualizar customer journey
+   - `AnalysisSummaryView.tsx` - Vista resumen de todo el análisis
+
+2. Crear API client:
+   - `frontend/lib/api-analysis.ts` - Cliente para endpoints de análisis
+
+3. Integrar en ChatInterface:
+   - Agregar botón/tab para ver análisis
+   - Mostrar estado de generación (completo, parcial, pendiente)
+
+**Archivos a crear:**
+- `frontend/app/components/BuyerPersonaView.tsx`
+- `frontend/app/components/ForumSimulationView.tsx`
+- `frontend/app/components/PainPointsView.tsx`
+- `frontend/app/components/CustomerJourneyView.tsx`
+- `frontend/app/components/AnalysisSummaryView.tsx`
+- `frontend/lib/api-analysis.ts`
+
+**Criterios:**
+- [ ] UI muestra buyer persona de forma legible y organizada
+- [ ] UI muestra foro, puntos de dolor, customer journey si existen
+- [ ] UI indica qué partes están completas y cuáles pendientes
+- [ ] Diseño consistente con el resto de la aplicación
+
+---
+
+#### PASO 5: Implementar Contexto Largo para Documentos
+
+**Problema:** Documentos solo se consultan vía RAG, no están siempre en contexto.
+
+**Solución:**
+1. Cuando se sube un documento:
+   - Generar resumen/extracto con LLM
+   - Guardar resumen en tabla `marketing_user_documents.summary`
+   - Mantener embeddings para RAG
+
+2. En `MemoryManager.get_context()`:
+   - Incluir resúmenes de documentos del chat en contexto largo
+   - Mantener RAG para búsqueda específica
+
+3. En prompts de agentes:
+   - Incluir resúmenes de documentos siempre (no solo cuando se busca)
+
+**Archivos a modificar:**
+- `backend/src/services/memory_manager.py` - agregar `get_document_summaries()`
+- `backend/src/api/documents.py` - generar resumen al subir documento
+- `backend/src/agents/content_generator_agent.py` - incluir resúmenes en prompt
+
+**Criterios:**
+- [ ] Documentos subidos tienen resumen generado
+- [ ] Resúmenes se incluyen en contexto largo del LLM
+- [ ] El agente puede referirse a información de documentos sin buscar
+- [ ] RAG sigue funcionando para búsqueda específica
+
+---
+
+#### PASO 6: Implementar Agentes Faltantes (Opcional - Futuro)
+
+**Nota:** Estos agentes están fuera del scope de TAREA 8.1, pero se documentan para futuro.
+
+**Agentes a implementar:**
+1. `ForumSimulatorAgent` - Simula comportamiento en foro
+2. `PainPointsExtractorAgent` - Extrae puntos de dolor
+3. `CustomerJourneyCreatorAgent` - Crea customer journey
+
+**Archivos a crear (futuro):**
+- `backend/src/agents/forum_simulator_agent.py`
+- `backend/src/agents/pain_points_agent.py`
+- `backend/src/agents/customer_journey_agent.py`
+
+---
+
+**Criterios de aceptación generales:**
+- [ ] El agente mantiene contexto de conversación (recuerda mensajes anteriores)
+- [ ] El agente solo genera contenido cuando se solicita explícitamente
+- [ ] Usuario puede ver buyer persona generado en UI
+- [ ] Usuario puede ver foro, puntos de dolor, customer journey (si existen)
+- [ ] Documentos subidos están siempre en contexto largo del agente
+- [ ] Conversación fluida y natural, no solo generación de contenido
+
+**Archivos a crear:**
+- `backend/src/api/buyer_persona.py`
+- `backend/src/schemas/buyer_persona.py`
+- `frontend/app/components/BuyerPersonaView.tsx`
+- `frontend/app/components/ForumSimulationView.tsx`
+- `frontend/app/components/PainPointsView.tsx`
+- `frontend/app/components/CustomerJourneyView.tsx`
+- `frontend/app/components/AnalysisSummaryView.tsx`
+- `frontend/lib/api-analysis.ts`
+- `docs/DIAGNOSTICO_MEMORIA_Y_CONTEXTO.md` ✅ (ya creado)
+
+**Archivos a modificar:**
+- `backend/src/api/chat.py` - cargar historial
+- `backend/src/agents/router_agent.py` - mejorar detección de contenido
+- `backend/src/services/memory_manager.py` - contexto largo de documentos
+- `backend/src/api/documents.py` - generar resúmenes
+- `backend/src/agents/content_generator_agent.py` - incluir resúmenes
+
+---
+
 ### TAREA 9: MCP Custom del Proyecto
 
 **Herramientas a utilizar:**

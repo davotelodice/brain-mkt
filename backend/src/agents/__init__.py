@@ -2,6 +2,7 @@
 
 from .base_agent import BaseAgent
 from .buyer_persona_agent import BuyerPersonaAgent
+from .content_generator_agent import ContentGeneratorAgent
 from .router_agent import AgentState, RouterAgent
 
-__all__ = ["BaseAgent", "RouterAgent", "AgentState", "BuyerPersonaAgent"]
+__all__ = ["BaseAgent", "RouterAgent", "AgentState", "BuyerPersonaAgent", "ContentGeneratorAgent"]

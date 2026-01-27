@@ -57,9 +57,20 @@ class RouterAgent(BaseAgent):
 
         # 2. Rule-based routing
 
-        # Priority 1: If no buyer persona, create one
+        # Priority 1: If no buyer persona, check if we have enough info
         if not context['has_buyer_persona']:
-            return AgentState.BUYER_PERSONA
+            # ✅ Check if user has provided business information
+            has_business_info = self._has_business_information(
+                user_message,
+                context['recent_chat']
+            )
+
+            if has_business_info:
+                # User provided info → Generate buyer persona
+                return AgentState.BUYER_PERSONA
+            else:
+                # No info yet → Ask for business details first
+                return AgentState.WAITING  # Will show onboarding message
 
         # Priority 2: If user uploaded documents but not processed
         # (Future: implement document processing agent)
@@ -177,21 +188,75 @@ class RouterAgent(BaseAgent):
             yield json.dumps({"type": "chunk", "content": final_content})
 
         elif state == AgentState.CONTENT_GENERATION:
-            # Future: Content Generator Agent with streaming
-            # For now, placeholder
+            # ✅ Content Generator Agent
             yield json.dumps({
                 "type": "chunk",
-                "content": "🚧 Generación de contenido en desarrollo (TAREA 7+).\n"
+                "content": "🎨 Generando ideas de contenido personalizadas...\n"
             })
 
+            from ..agents.content_generator_agent import ContentGeneratorAgent
+
+            content_agent = ContentGeneratorAgent(self.llm, self.memory)
+            result = await content_agent.execute(chat_id, project_id, user_message)
+
+            if result["success"]:
+                # Format content ideas nicely
+                ideas = result.get("content_ideas", [])
+
+                if ideas:
+                    content_text = "✨ **Ideas de Contenido Generadas:**\n\n"
+
+                    for i, idea in enumerate(ideas[:10], 1):  # Max 10 ideas
+                        if isinstance(idea, dict):
+                            titulo = idea.get("titulo", f"Idea {i}")
+                            plataforma = idea.get("plataforma", "TikTok/Instagram")
+                            hook = idea.get("hook", "")
+                            estructura = idea.get("estructura", "")
+                            cta = idea.get("cta", "")
+
+                            content_text += f"**{i}. {titulo}** ({plataforma})\n"
+                            if hook:
+                                content_text += f"🎣 Hook: {hook}\n"
+                            if estructura:
+                                content_text += f"📋 Estructura: {estructura}\n"
+                            if cta:
+                                content_text += f"📢 CTA: {cta}\n"
+                            content_text += "\n"
+                        else:
+                            # Fallback for non-dict ideas
+                            content_text += f"**{i}.** {str(idea)}\n\n"
+
+                    content_text += "\n💡 Estas ideas están personalizadas para tu buyer persona y usan técnicas probadas de contenido viral."
+                else:
+                    content_text = result.get("message", "✅ Contenido generado correctamente.")
+            else:
+                content_text = f"❌ {result.get('message', 'Error al generar contenido')}"
+
+            yield json.dumps({"type": "chunk", "content": content_text})
+
         elif state == AgentState.WAITING:
-            # Just acknowledge
-            content = (
-                "Esperando tus instrucciones. Puedes pedirme:\n"
-                "- 'Dame ideas de contenido'\n"
-                "- 'Genera posts'\n"
-                "- 'Analiza mi audiencia'"
-            )
+            # Check if we need to ask for business info first
+            context = await self._get_context(chat_id, project_id, user_message)
+
+            if not context['has_buyer_persona']:
+                # ✅ Onboarding: Ask for business information
+                content = (
+                    "👋 ¡Hola! Soy tu asistente de marketing IA.\n\n"
+                    "Para crear tu buyer persona y ayudarte mejor, necesito conocer tu negocio:\n\n"
+                    "📋 Por favor, cuéntame:\n"
+                    "1. ¿Qué tipo de negocio tienes? (producto/servicio)\n"
+                    "2. ¿A quién le vendes? (tu audiencia objetivo)\n"
+                    "3. ¿Cuál es tu principal problema o necesidad de marketing?\n\n"
+                    "Con esta información podré crear un análisis completo de tu cliente ideal. 😊"
+                )
+            else:
+                # Just acknowledge
+                content = (
+                    "Esperando tus instrucciones. Puedes pedirme:\n"
+                    "- 'Dame ideas de contenido'\n"
+                    "- 'Genera posts'\n"
+                    "- 'Analiza mi audiencia'"
+                )
             yield json.dumps({"type": "chunk", "content": content})
 
         # 4. Done signal
@@ -218,6 +283,54 @@ class RouterAgent(BaseAgent):
         message_lower = message.lower()
         return any(keyword in message_lower for keyword in content_keywords)
 
+    def _has_business_information(
+        self,
+        current_message: str,
+        recent_chat: dict
+    ) -> bool:
+        """
+        Check if user has provided enough business information.
+
+        Looks for:
+        - Business type/product/service mentioned
+        - Target audience mentioned
+        - Marketing needs/problems mentioned
+        - At least 30+ words of context
+
+        Args:
+            current_message: Current user message
+            recent_chat: Recent chat history from memory (from ConversationBufferWindowMemory)
+
+        Returns:
+            True if enough information provided
+        """
+        # recent_chat comes from ConversationBufferWindowMemory.load_memory_variables({})
+        # Format: {"history": "Human: ...\nAI: ...\nHuman: ..."}
+        all_text = current_message.lower()
+
+        # Extract text from history if available
+        if isinstance(recent_chat, dict):
+            history = recent_chat.get("history", "")
+            if history:
+                # Remove "Human:" and "AI:" prefixes, keep only content
+                history_clean = history.replace("Human:", "").replace("AI:", "")
+                all_text += " " + history_clean.lower()
+
+        # Check for business-related keywords
+        business_keywords = [
+            "negocio", "empresa", "producto", "servicio", "vendo", "vendo",
+            "cliente", "audiencia", "mercado", "competencia", "marketing",
+            "ventas", "publicidad", "promocion", "estrategia", "objetivo",
+            "tengo", "ofrezco", "dedico", "trabajo", "hago"
+        ]
+
+        keyword_count = sum(1 for keyword in business_keywords if keyword in all_text)
+
+        # Need at least 2 business keywords AND reasonable length (30+ words)
+        word_count = len(all_text.split())
+
+        return keyword_count >= 2 and word_count >= 30
+
     def _get_state_reason(self, state: AgentState) -> str:
         """
         Get human-readable reason for state.
@@ -229,7 +342,7 @@ class RouterAgent(BaseAgent):
             Reason string
         """
         reasons = {
-            AgentState.BUYER_PERSONA: "No hay buyer persona. Creando análisis completo...",
+            AgentState.BUYER_PERSONA: "Generando buyer persona completo...",
             AgentState.WAITING: "Esperando instrucciones del usuario.",
             AgentState.CONTENT_GENERATION: "Generando contenido solicitado...",
             AgentState.DOCUMENT_PROCESSING: "Procesando documentos subidos..."

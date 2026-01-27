@@ -416,11 +416,45 @@ async def send_message(
         )
 
     elif agent_state == AgentState.CONTENT_GENERATION:
-        # Future: Content Generator Agent
-        assistant_content = (
-            "🚧 Generación de contenido estará disponible en TAREA 5.\n"
-            "Por ahora puedo ayudarte con el análisis de buyer persona."
+        # ✅ Content Generator Agent
+        from ..agents.content_generator_agent import ContentGeneratorAgent
+        from ..services.llm_service import LLMService
+
+        llm_service = LLMService()
+        content_agent = ContentGeneratorAgent(llm_service, memory_manager)
+        result = await content_agent.execute(
+            chat_id=chat_id,
+            project_id=user.project_id,
+            user_message=request.content
         )
+
+        if result["success"]:
+            ideas = result.get("content_ideas", [])
+            if ideas:
+                assistant_content = "✨ **Ideas de Contenido Generadas:**\n\n"
+                for i, idea in enumerate(ideas[:10], 1):
+                    if isinstance(idea, dict):
+                        titulo = idea.get("titulo", f"Idea {i}")
+                        plataforma = idea.get("plataforma", "TikTok/Instagram")
+                        hook = idea.get("hook", "")
+                        estructura = idea.get("estructura", "")
+                        cta = idea.get("cta", "")
+
+                        assistant_content += f"**{i}. {titulo}** ({plataforma})\n"
+                        if hook:
+                            assistant_content += f"🎣 Hook: {hook}\n"
+                        if estructura:
+                            assistant_content += f"📋 Estructura: {estructura}\n"
+                        if cta:
+                            assistant_content += f"📢 CTA: {cta}\n"
+                        assistant_content += "\n"
+                    else:
+                        assistant_content += f"**{i}.** {str(idea)}\n\n"
+                assistant_content += "\n💡 Ideas personalizadas para tu buyer persona."
+            else:
+                assistant_content = result.get("message", "✅ Contenido generado.")
+        else:
+            assistant_content = f"❌ {result.get('message', 'Error al generar contenido')}"
 
     else:
         assistant_content = f"Estado: {routing_result['reason']}"

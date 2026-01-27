@@ -1081,6 +1081,38 @@ npm run dev
 
 ---
 
+## ⚠️ TAREA 8.1: Memoria de Conversación, Contexto Largo y Visualización (PENDIENTE)
+
+**Estado**: 🔴 **CRÍTICO - Requerido antes de TAREA 9**  
+**Fecha diagnóstico**: 2026-01-27
+
+**Problemas identificados:**
+1. ❌ Memoria de conversación NO se carga al iniciar chat
+2. ❌ Router Agent detecta TODO como solicitud de contenido
+3. ❌ No hay forma de ver buyer persona, foro, puntos de dolor, customer journey
+4. ❌ Agentes faltantes (Forum Simulator, Pain Points, Customer Journey) no implementados
+5. ❌ Documentos solo se consultan vía RAG, no están en contexto largo
+
+**Documentación:**
+- Ver `docs/DIAGNOSTICO_MEMORIA_Y_CONTEXTO.md` para diagnóstico completo
+- Ver `PRPs/marketing-brain-system-v3.md` - TAREA 8.1 para implementación
+
+**Impacto:**
+- El agente no mantiene contexto de conversación
+- Siempre responde con ideas de contenido (no conversa)
+- Usuario no puede verificar qué se generó
+- Sistema incompleto según PRP
+
+**Pendientes:**
+- [ ] Cargar historial de conversación al iniciar chat
+- [ ] Mejorar detección de solicitudes de contenido
+- [ ] Crear endpoints API para visualizar datos
+- [ ] Crear componentes frontend para visualización
+- [ ] Implementar contexto largo para documentos
+- [ ] (Futuro) Implementar agentes faltantes
+
+---
+
 ## ✅ TAREA 8: Frontend Chat Interface con Streaming
 
 **Estado**: ✅ Completada  
@@ -1289,6 +1321,63 @@ cd frontend && npm run dev
 2. **Docker**: Configurar contenedores para desarrollo y producción
 3. **Testing Completo**: >80% coverage + documentación
 
+### ⚠️ Errores Encontrados y Soluciones (Post-TAREA 8)
+
+#### Error 1: Router Agent Ejecutaba Buyer Persona Sin Información - **✅ RESUELTO**
+- **Error:** Al decir "hola", el sistema ejecutaba Buyer Persona Agent inmediatamente sin preguntar sobre el negocio, resultando en error de parsing JSON vacío.
+- **Causa:** El Router Agent ejecutaba `BUYER_PERSONA` automáticamente cuando no había buyer persona, pero el Buyer Persona Agent necesita información del negocio del usuario para generar un análisis completo.
+- **Solución:**
+  1. Agregada función `_has_business_information()` que verifica si el usuario ha proporcionado información suficiente (keywords de negocio + 30+ palabras).
+  2. Modificado `route()` para que solo ejecute Buyer Persona si hay información suficiente, sino muestra mensaje de onboarding.
+  3. Mejorado mensaje de `WAITING` state para preguntar sobre el negocio cuando no hay buyer persona.
+- **Archivos modificados:**
+  - `backend/src/agents/router_agent.py`: Agregada lógica de verificación de información
+  - `backend/src/agents/buyer_persona_agent.py`: Mejorado parsing JSON (limpia markdown code blocks)
+
+#### Error 2: Parsing JSON Vacío del LLM - **✅ RESUELTO**
+- **Error:** `Error al parsear respuesta del LLM: Expecting value: line 1 column 1 (char 0)`
+- **Causa:** El LLM a veces devuelve respuestas vacías o con markdown code blocks (`\`\`\`json ... \`\`\``).
+- **Solución:** Agregada limpieza de respuesta antes de parsear JSON:
+  ```python
+  # Remove markdown code blocks if present
+  if response_clean.startswith("```json"):
+      response_clean = response_clean[7:]
+  if response_clean.startswith("```"):
+      response_clean = response_clean[3:]
+  if response_clean.endswith("```"):
+      response_clean = response_clean[:-3]
+  ```
+
+#### Error 3: Middleware No Leía Cookies httpOnly - **✅ RESUELTO**
+- **Error:** Todas las peticiones a `/api/chats` devolvían `401 Unauthorized` después del login.
+- **Causa:** El middleware `get_current_user` solo leía el token del header `Authorization: Bearer`, pero el frontend usa cookies httpOnly.
+- **Solución:** Modificado `backend/src/middleware/auth.py` para leer primero la cookie `auth_token`, luego el Bearer token como fallback.
+- **Archivo modificado:** `backend/src/middleware/auth.py`
+
+#### Mejora: Feedback de Documentos Procesados
+- **Cambio:** El componente `DocumentUpload` ahora muestra si el documento fue procesado correctamente.
+- **Archivo modificado:** `frontend/app/components/DocumentUpload.tsx`
+
+### Flujo Corregido
+
+**Antes (Incorrecto):**
+```
+Usuario: "hola"
+→ Router: No hay buyer persona → Ejecutar Buyer Persona Agent
+→ Buyer Persona Agent: Intenta generar con solo "hola" → Error JSON vacío
+```
+
+**Ahora (Correcto):**
+```
+Usuario: "hola"
+→ Router: No hay buyer persona + No hay info de negocio → WAITING
+→ Mensaje: "Por favor, cuéntame sobre tu negocio..."
+
+Usuario: "Tengo un restaurante en Barcelona, vendo comida italiana..."
+→ Router: No hay buyer persona + SÍ hay info suficiente → BUYER_PERSONA
+→ Buyer Persona Agent: Genera análisis completo con la información
+```
+
 ---
 
-**Última actualización**: 2026-01-27 03:00 UTC
+**Última actualización**: 2026-01-27 03:30 UTC

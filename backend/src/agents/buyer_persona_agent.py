@@ -66,13 +66,26 @@ class BuyerPersonaAgent(BaseAgent):
         try:
             response = await self.llm.generate(
                 prompt=prompt,
-                system="Eres un experto en marketing digital especializado en crear buyer personas ULTRA DETALLADAS.",
+                system="Eres un experto en marketing digital especializado en crear buyer personas ULTRA DETALLADAS. SIEMPRE responde en formato JSON válido.",
                 max_tokens=8000,
                 temperature=0.7
             )
 
-            # 4. Parse JSON response
-            buyer_persona_data = json.loads(response)
+            # 4. Clean response (remove markdown code blocks if present)
+            response_clean = response.strip()
+            if response_clean.startswith("```json"):
+                response_clean = response_clean[7:]  # Remove ```json
+            if response_clean.startswith("```"):
+                response_clean = response_clean[3:]  # Remove ```
+            if response_clean.endswith("```"):
+                response_clean = response_clean[:-3]  # Remove closing ```
+            response_clean = response_clean.strip()
+
+            # 5. Parse JSON response
+            if not response_clean:
+                raise json.JSONDecodeError("Empty response from LLM", response, 0)
+
+            buyer_persona_data = json.loads(response_clean)
 
             # 5. Save to database
             # TODO: Parse buyer_persona_data and distribute across correct columns

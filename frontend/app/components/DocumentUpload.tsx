@@ -46,15 +46,20 @@ export function DocumentUpload({ chatId }: DocumentUploadProps) {
 
     try {
       const result = await uploadDocument(chatId, file)
-      setSuccess(`✅ Archivo "${result.filename}" subido correctamente`)
+      
+      if (result.processed) {
+        setSuccess(`✅ Archivo "${result.filename}" subido y procesado correctamente. El asistente ya puede usarlo.`)
+      } else {
+        setSuccess(`✅ Archivo "${result.filename}" subido. Procesando en segundo plano...`)
+      }
       
       // Clear input
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
 
-      // Clear success message after 3 seconds
-      setTimeout(() => setSuccess(null), 3000)
+      // Clear success message after 5 seconds
+      setTimeout(() => setSuccess(null), 5000)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al subir archivo')
     } finally {
