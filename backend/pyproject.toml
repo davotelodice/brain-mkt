@@ -23,6 +23,7 @@ dependencies = [
     "langgraph>=0.0.20",
     "openai>=1.12.0",
     "tiktoken>=0.6.0",
+    "tenacity>=8.2.3",  # Retry logic with exponential backoff
     
     # Security
     "bcrypt>=4.1.2",

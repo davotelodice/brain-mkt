@@ -3089,16 +3089,42 @@ Implementar el sistema de agentes IA con 3 tipos de memoria (short-term, long-te
 5. ESPERA peticiones del usuario
 6. Genera contenido SOLO cuando se le pide
 
+**📋 DISEÑO VALIDADO:** 
+Este task implementa las decisiones documentadas en: `docs/plans/2026-01-27-agentes-memoria-design.md`
+
+**Decisiones clave aplicadas:**
+- ✅ **DECISIÓN 1:** LangGraph (state machine) para Router Agent
+- ✅ **DECISIÓN 2:** MemoryManager centralizado (combina 3 tipos de memoria)
+- ✅ **DECISIÓN 3:** Rule-based routing (sin LLM extra, más rápido)
+- ✅ **DECISIÓN 4:** LLM configurable (OpenAI/OpenRouter vía variable de entorno)
+- ✅ **DECISIÓN 5:** Implementación incremental (Fase 1: Router + Buyer Persona)
+- ✅ **DECISIÓN 6:** Búsqueda semántica simple (mejorar en TAREA 5)
+- ✅ **DECISIÓN 7:** Retry con exponential backoff (manejo robusto de errores)
+- ✅ **DECISIÓN 8:** Prompt único con plantilla completa (40+ preguntas, NO saltarse ninguna)
+
+**Archivos a crear en esta TAREA:**
+```
+backend/src/agents/
+├── base_agent.py              # Clase base compartida
+├── router_agent.py            # Orquestador (LangGraph state machine)
+└── buyer_persona_agent.py     # Genera buyer persona (40+ preguntas)
+
+backend/src/services/
+├── memory_manager.py          # MemoryManager centralizado
+├── llm_service.py             # LLM configurable (OpenAI/OpenRouter)
+└── rag_service.py             # Búsqueda semántica simple
+```
+
 **Pasos a seguir:**
 
 1. **[OBLIGATORIO] Ejecutar Skill brainstorming ANTES de implementar:**
    ```
    @.cursor/skills/brainstorming/SKILL.md explorar diseño de sistema de agentes
    ```
-   - Explorar arquitectura de agentes
-   - Decidir entre LangChain vs LangGraph vs custom
-   - Diseñar flujo de memoria
-   - Entender requisitos de entrenamiento
+   - ✅ **COMPLETADO**: Ver `docs/plans/2026-01-27-agentes-memoria-design.md`
+   - ✅ Arquitectura: LangGraph seleccionado
+   - ✅ Memoria: MemoryManager centralizado
+   - ✅ LLM: Configurable (OpenAI/OpenRouter)
 
 2. **Consultar Archon sobre agentes y memoria:**
    - Ejecutar comandos listados arriba
@@ -3734,6 +3760,38 @@ Procesar las 9 transcripciones de YouTube de Andrea Estratega y cargarlas en `ma
 
 **⚠️ GOTCHA CRÍTICO APLICADO:**
 **GOTCHA 5 - OpenAI Rate Limits**: Ya implementado en EmbeddingService.generate_embeddings_batch() de TAREA 4.
+
+**📋 MEJORAS DE DISEÑO (desde TAREA 4):**
+Esta tarea implementa mejoras documentadas en: `docs/plans/2026-01-27-agentes-memoria-design.md`
+
+**Decisión aplicada:**
+- ✅ **DECISIÓN 6:** Migración de búsqueda semántica simple → híbrida con reranking
+  - **TAREA 4:** Implementó búsqueda vectorial simple (suficiente para MVP)
+  - **TAREA 5:** Agregar filtrado por metadata + reranking con LLM
+  - **Beneficios:** Mejor precisión, considera tipo de documento, reranking mejora relevancia
+
+**Mejoras a implementar en `backend/src/services/rag_service.py`:**
+```python
+async def search_relevant_docs(
+    chat_id: UUID,
+    query: str,
+    limit: int = 5,
+    rerank: bool = True,
+    metadata_filters: dict = None
+) -> List[dict]:
+    # 1. Búsqueda vectorial (traer 3x resultados para reranking)
+    initial_results = await self._vector_search(query, limit * 3)
+    
+    # 2. Filtrar por metadata (tipo, fecha, fuente)
+    filtered = self._filter_by_metadata(initial_results, metadata_filters)
+    
+    # 3. Reranking con LLM (opcional, mejora relevancia)
+    if rerank:
+        reranked = await self._rerank_with_llm(query, filtered)
+        return reranked[:limit]
+    
+    return filtered[:limit]
+```
 
 **Pasos a seguir:**
 

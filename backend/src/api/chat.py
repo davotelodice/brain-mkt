@@ -4,6 +4,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..agents.buyer_persona_agent import BuyerPersonaAgent
+from ..agents.router_agent import AgentState, RouterAgent
 from ..db.database import get_db
 from ..db.models import MarketingUser
 from ..middleware.auth import get_current_user
@@ -17,6 +19,10 @@ from ..schemas.chat import (
     UpdateChatTitleRequest,
 )
 from ..services.chat_service import ChatService
+from ..services.embedding_service import EmbeddingService
+from ..services.llm_service import LLMService
+from ..services.memory_manager import MemoryManager
+from ..services.rag_service import RAGService
 
 router = APIRouter(prefix="/api/chats", tags=["chats"])
 
@@ -31,6 +37,28 @@ def get_chat_service(db: AsyncSession = Depends(get_db)) -> ChatService:
         ChatService instance
     """
     return ChatService(db)
+
+
+def get_agent_system(db: AsyncSession = Depends(get_db)):
+    """Dependency for complete agent system.
+
+    Args:
+        db: Database session
+
+    Returns:
+        Tuple of (router_agent, buyer_persona_agent, memory_manager)
+    """
+    # Initialize services
+    llm_service = LLMService()
+    embedding_service = EmbeddingService()
+    rag_service = RAGService(db, embedding_service)
+    memory_manager = MemoryManager(db, rag_service)
+
+    # Initialize agents
+    router_agent = RouterAgent(llm_service, memory_manager)
+    buyer_persona_agent = BuyerPersonaAgent(llm_service, memory_manager, db)
+
+    return router_agent, buyer_persona_agent, memory_manager
 
 
 @router.post("", response_model=CreateChatResponse)
@@ -198,21 +226,32 @@ async def send_message(
     chat_id: UUID,
     request: SendMessageRequest,
     user: MarketingUser = Depends(get_current_user),
-    chat_service: ChatService = Depends(get_chat_service)
+    chat_service: ChatService = Depends(get_chat_service),
+    agent_system=Depends(get_agent_system)
 ) -> Message:
-    """Send message to chat.
+    """Send message to chat and process with AI agents.
+
+    Flow:
+    1. Save user message
+    2. Router Agent decides which agent to execute
+    3. Execute corresponding agent (Buyer Persona, Content Generator, etc.)
+    4. Save agent response
+    5. Return agent message
 
     Args:
         chat_id: Chat ID
         request: Message request
         user: Current authenticated user
         chat_service: Chat service
+        agent_system: Agent system (router, buyer_persona, memory)
 
     Returns:
-        Created message
+        Created assistant message
     """
-    # Create user message
-    message = await chat_service.create_message(
+    router_agent, buyer_persona_agent, memory_manager = agent_system
+
+    # 1. Create and save user message
+    await chat_service.create_message(
         chat_id=chat_id,
         user_id=user.id,
         project_id=user.project_id,
@@ -220,14 +259,76 @@ async def send_message(
         content=request.content
     )
 
-    # TODO: In TAREA 4, trigger AI agent here
+    # 2. Add to short-term memory
+    await memory_manager.add_message_to_short_term("user", request.content)
+
+    # 3. Router Agent decides which agent to execute
+    routing_result = await router_agent.execute(
+        chat_id=chat_id,
+        project_id=user.project_id,
+        user_message=request.content
+    )
+
+    agent_state = routing_result["state"]
+
+    # 4. Execute corresponding agent
+    if agent_state == AgentState.BUYER_PERSONA:
+        # Execute Buyer Persona Agent
+        result = await buyer_persona_agent.execute(
+            chat_id=chat_id,
+            project_id=user.project_id,
+            user_message=request.content
+        )
+
+        if result["success"]:
+            assistant_content = (
+                "✅ He generado tu buyer persona completo con 40+ preguntas respondidas.\n\n"
+                "Puedes revisarlo y ahora puedes pedirme:\n"
+                "- 'Dame ideas de contenido para redes sociales'\n"
+                "- 'Genera posts para Instagram'\n"
+                "- 'Crea un customer journey'\n"
+                "- 'Dame puntos de dolor de mi audiencia'"
+            )
+        else:
+            assistant_content = f"❌ Error al generar buyer persona: {result['message']}"
+
+    elif agent_state == AgentState.WAITING:
+        assistant_content = (
+            "Estoy esperando tus instrucciones. Puedes pedirme:\n"
+            "- 'Dame ideas de contenido'\n"
+            "- 'Genera posts'\n"
+            "- 'Analiza mi audiencia'\n"
+            "- 'Crea un customer journey'"
+        )
+
+    elif agent_state == AgentState.CONTENT_GENERATION:
+        # Future: Content Generator Agent
+        assistant_content = (
+            "🚧 Generación de contenido estará disponible en TAREA 5.\n"
+            "Por ahora puedo ayudarte con el análisis de buyer persona."
+        )
+
+    else:
+        assistant_content = f"Estado: {routing_result['reason']}"
+
+    # 5. Create and save assistant message
+    assistant_message = await chat_service.create_message(
+        chat_id=chat_id,
+        user_id=user.id,
+        project_id=user.project_id,
+        role="assistant",
+        content=assistant_content
+    )
+
+    # 6. Add to short-term memory
+    await memory_manager.add_message_to_short_term("assistant", assistant_content)
 
     return Message(
-        id=message.id,
-        role=message.role,
-        content=message.content,
-        metadata=message.metadata,
-        created_at=message.created_at
+        id=assistant_message.id,
+        role=assistant_message.role,
+        content=assistant_message.content,
+        metadata=assistant_message.metadata,
+        created_at=assistant_message.created_at
     )
 
 
