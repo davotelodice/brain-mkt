@@ -1079,13 +1079,216 @@ npm run dev
    - ✅ Cookie limpiada
    - ✅ Redirige a `/login`
 
-### Próximos Pasos (TAREA 8)
+---
 
-1. **Chat Interface**: Componente de chat con streaming SSE
-2. **EventSource**: Consumir `/api/chats/{id}/stream`
-3. **Message List**: Display de mensajes user/assistant
-4. **Document Upload**: Subida de archivos (.txt, .pdf, .docx)
+## ✅ TAREA 8: Frontend Chat Interface con Streaming
+
+**Estado**: ✅ Completada  
+**Fecha**: 2026-01-27
+
+### Implementación
+
+**Objetivo**: Interfaz de chat completa con streaming SSE, lista de chats, y subida de documentos.
+
+**Componentes implementados:**
+1. ✅ **ChatInterface**: Componente principal con streaming SSE en tiempo real
+2. ✅ **MessageList**: Lista de mensajes con auto-scroll y estados vacíos
+3. ✅ **Sidebar**: Lista de chats con creación de nuevos chats
+4. ✅ **DocumentUpload**: Subida de archivos (.txt, .pdf, .docx)
+5. ✅ **ChatPageContent**: Wrapper con Suspense para useSearchParams
+6. ✅ **API Client**: Funciones para chat, streaming, y documentos
+
+### Archivos Creados (Frontend)
+
+**Estructura:**
+```
+frontend/
+├── lib/
+│   ├── types.ts              # TypeScript types (Message, ChatSummary, etc.)
+│   └── api-chat.ts           # API client (streamMessage, listChats, uploadDocument)
+├── app/
+│   ├── components/
+│   │   ├── ChatInterface.tsx      # Main chat UI with SSE streaming
+│   │   ├── MessageList.tsx        # Message display with auto-scroll
+│   │   ├── Sidebar.tsx             # Chat list sidebar
+│   │   ├── DocumentUpload.tsx     # File upload component
+│   │   └── ChatPageContent.tsx    # Wrapper for useSearchParams
+│   └── page.tsx                   # Homepage with Suspense boundary
+```
+
+**Dependencias utilizadas:**
+- `next@14.2.30` - Framework (App Router)
+- `react@18`, `react-dom@18` - Core
+- `typescript` - Tipado estático
+- `tailwindcss` - Estilos
+
+### Funcionalidades Implementadas
+
+#### 1. Streaming SSE (Server-Sent Events)
+
+**Endpoint consumido:** `POST /api/chats/{chat_id}/stream`
+
+**Implementación:**
+- ✅ Async generator `streamMessage()` en `lib/api-chat.ts`
+- ✅ Parsing de formato SSE: `data: {"type": "status|chunk|error", "content": "..."}\n\n`
+- ✅ Actualización en tiempo real del mensaje del asistente
+- ✅ Indicador visual "Escribiendo..." durante streaming
+- ✅ Manejo de errores con mensajes al usuario
+
+**Formato SSE:**
+```typescript
+// Status update
+data: {"type": "status", "content": "📊 Analizando perfil..."}
+
+// Content chunk
+data: {"type": "chunk", "content": "Tu buyer persona..."}
+
+// Error
+data: {"type": "error", "content": "Error message"}
+
+// Done
+data: [DONE]
+```
+
+#### 2. Lista de Mensajes
+
+**Características:**
+- ✅ Auto-scroll al final cuando llegan nuevos mensajes
+- ✅ Estados vacíos (sin mensajes)
+- ✅ Timestamps formateados (relativos: "Hoy", "Ayer", "Hace X días")
+- ✅ Diferenciación visual user vs assistant
+- ✅ Soporte para mensajes largos (whitespace-pre-wrap)
+
+#### 3. Sidebar de Chats
+
+**Funcionalidades:**
+- ✅ Lista de todos los chats del usuario
+- ✅ Crear nuevo chat con botón "+ Nueva Conversación"
+- ✅ Selección de chat activo (highlight)
+- ✅ Contador de mensajes por chat
+- ✅ Fechas relativas (formato amigable)
+- ✅ Estado de carga y errores
+
+#### 4. Subida de Documentos
+
+**Endpoint consumido:** `POST /api/documents/upload/{chat_id}`
+
+**Características:**
+- ✅ Tipos permitidos: `.txt`, `.pdf`, `.docx`
+- ✅ Validación de tamaño (máx 10MB)
+- ✅ Feedback visual (loading, success, error)
+- ✅ Mensajes de error claros al usuario
+
+### ⚠️ Errores Encontrados y Soluciones
+
+#### Error 1: ESLint - Variable no usada - **✅ RESUELTO**
+- **Error:** `'SendMessageRequest' is defined but never used`
+- **Causa:** Import no utilizado en `lib/api-chat.ts`
+- **Solución:** Removido del import (se usa inline en el body del fetch)
+
+#### Error 2: Next.js Suspense Boundary - **✅ RESUELTO**
+- **Error:** `useSearchParams() should be wrapped in a suspense boundary`
+- **Causa:** Next.js 14 requiere Suspense para `useSearchParams()` en Server Components
+- **Solución:** 
+  - Creado `ChatPageContent.tsx` (Client Component con useSearchParams)
+  - Envuelto en `<Suspense>` en `page.tsx` (Server Component)
+- **Build status:** ✅ Compilado exitosamente
+
+### Gotchas Aplicados
+
+#### GOTCHA 4 - Server vs Client Components
+
+**Implementado correctamente:**
+- ✅ `page.tsx` → Server Component (usa Suspense)
+- ✅ `ChatPageContent.tsx` → Client Component (`'use client'`, useSearchParams)
+- ✅ `ChatInterface.tsx` → Client Component (useState, useEffect, streaming)
+- ✅ `MessageList.tsx` → Client Component (useRef, useEffect)
+- ✅ `Sidebar.tsx` → Client Component (useState, useEffect)
+- ✅ `DocumentUpload.tsx` → Client Component (useState, useRef)
+
+#### GOTCHA 10 - Cookies httpOnly
+
+**Mantenido de TAREA 7:**
+- ✅ Todas las llamadas API usan `credentials: 'include'`
+- ✅ Cookies httpOnly funcionan correctamente
+- ✅ Middleware protege rutas privadas
+
+### Skills Aplicadas
+
+1. **react-ui-patterns:**
+   - ✅ Loading states solo cuando no hay data
+   - ✅ Error states siempre visibles al usuario
+   - ✅ Optimistic updates (mensaje usuario aparece inmediatamente)
+   - ✅ Empty states para lista de chats y mensajes
+   - ✅ Botones deshabilitados durante operaciones async
+
+2. **frontend-design:**
+   - ✅ UI moderna con gradientes y sombras
+   - ✅ Tipografía clara (Inter font)
+   - ✅ Espaciado generoso
+   - ✅ Animaciones sutiles (spinners, hover states)
+   - ✅ Colores consistentes (blue-600 primary, gray-900 sidebar)
+
+3. **nextjs-best-practices:**
+   - ✅ Suspense boundary para useSearchParams
+   - ✅ Server Components por defecto
+   - ✅ Client Components solo donde necesario
+   - ✅ Manejo correcto de query params
+
+4. **context-window-management:**
+   - ✅ Auto-scroll al final de mensajes
+   - ✅ Mensajes acumulados en tiempo real durante streaming
+   - ✅ Scroll suave (behavior: 'smooth')
+
+### Testing Manual
+
+#### 1. Iniciar Frontend y Backend
+
+```bash
+# Terminal 1: Backend
+cd backend && python run.py
+
+# Terminal 2: Frontend
+cd frontend && npm run dev
+```
+
+#### 2. Flujo de Prueba Completo
+
+1. **Login:**
+   - Abre `http://localhost:3000`
+   - Login con credenciales existentes
+   - ✅ Redirige a `/` con chat creado automáticamente
+
+2. **Crear Nuevo Chat:**
+   - Click en "+ Nueva Conversación" en sidebar
+   - ✅ Nuevo chat aparece en lista
+   - ✅ Chat seleccionado (highlight azul)
+
+3. **Enviar Mensaje:**
+   - Escribe: "Quiero crear un buyer persona para mi negocio"
+   - Click "Enviar" o Enter
+   - ✅ Mensaje usuario aparece inmediatamente (optimistic)
+   - ✅ Indicador "Escribiendo..." aparece
+   - ✅ Chunks del asistente aparecen en tiempo real
+   - ✅ Mensaje final se guarda en DB
+
+4. **Subir Documento:**
+   - Click en "📄 Subir documento"
+   - Selecciona archivo `.txt` o `.pdf`
+   - ✅ Mensaje de éxito aparece
+   - ✅ Archivo procesado en backend
+
+5. **Cambiar de Chat:**
+   - Click en otro chat en sidebar
+   - ✅ Mensajes del chat seleccionado se cargan
+   - ✅ URL actualiza: `/?chat={chat_id}`
+
+### Próximos Pasos (TAREA 9+)
+
+1. **MCP Custom**: Crear MCP para acceso al sistema desde Cursor
+2. **Docker**: Configurar contenedores para desarrollo y producción
+3. **Testing Completo**: >80% coverage + documentación
 
 ---
 
-**Última actualización**: 2026-01-27 02:30 UTC
+**Última actualización**: 2026-01-27 03:00 UTC

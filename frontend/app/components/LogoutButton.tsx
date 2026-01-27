@@ -3,7 +3,11 @@
 import { useRouter } from 'next/navigation'
 import { logout } from '@/lib/api'
 
-export function LogoutButton() {
+interface LogoutButtonProps {
+  variant?: 'default' | 'sidebar'
+}
+
+export function LogoutButton({ variant = 'default' }: LogoutButtonProps) {
   const router = useRouter()
 
   const handleLogout = async () => {
@@ -13,6 +17,17 @@ export function LogoutButton() {
       router.push('/login')
       router.refresh()
     }
+  }
+
+  if (variant === 'sidebar') {
+    return (
+      <button
+        onClick={handleLogout}
+        className="w-full px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition text-sm"
+      >
+        🚪 Cerrar Sesión
+      </button>
+    )
   }
 
   return (
