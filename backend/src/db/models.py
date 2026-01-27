@@ -64,7 +64,7 @@ class MarketingMessage(Base):
     project_id = Column(UUID(as_uuid=True), ForeignKey('marketing_projects.id', ondelete='CASCADE'), nullable=False)
     role = Column(String(20), CheckConstraint("role IN ('user', 'assistant', 'system')"), nullable=False)
     content = Column(Text, nullable=False)
-    metadata = Column(JSONB, default={})
+    metadata_ = Column("metadata", JSONB, default={})  # Renamed to avoid SQLAlchemy reserved name
     created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
 
 
@@ -99,7 +99,7 @@ class MarketingKnowledgeBase(Base):
     source_title = Column(String(500), nullable=False)
     chunk_text = Column(Text, nullable=False)
     chunk_index = Column(Integer, nullable=False)
-    metadata = Column(JSONB, default={})
+    metadata_ = Column("metadata", JSONB, default={})  # Renamed to avoid SQLAlchemy reserved name
     embedding = Column(Vector(1536), nullable=False)
     created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
 

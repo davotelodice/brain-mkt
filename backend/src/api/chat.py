@@ -160,7 +160,7 @@ async def get_chat(
                 id=msg.id,
                 role=msg.role,
                 content=msg.content,
-                metadata=msg.metadata,
+                metadata=msg.metadata_,
                 created_at=msg.created_at
             )
             for msg in messages
@@ -327,7 +327,7 @@ async def send_message(
         id=assistant_message.id,
         role=assistant_message.role,
         content=assistant_message.content,
-        metadata=assistant_message.metadata,
+        metadata=assistant_message.metadata_,
         created_at=assistant_message.created_at
     )
 

@@ -200,7 +200,7 @@ class ChatService:
             project_id=project_id,
             role=role,
             content=content,
-            metadata=metadata or {}
+            metadata_=metadata or {}  # Use metadata_ to avoid SQLAlchemy reserved name
         )
         self.db.add(message)
         await self.db.flush()

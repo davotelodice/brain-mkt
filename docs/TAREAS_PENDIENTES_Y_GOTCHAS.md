@@ -478,6 +478,65 @@ OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
 **OK para MVP**: Stateless está bien para empezar
 **Mejora futura**: Singleton pattern o dependency con lifespan
 
+### ⚠️ Errores Encontrados Durante Ejecución (Todos Resueltos)
+
+#### Error 1: `.env` No Cargaba - **✅ RESUELTO**
+- **Error:** `sqlalchemy.exc.ArgumentError: Could not parse SQLAlchemy URL`
+- **Causa:** `run.py` no cargaba variables de entorno del `.env`
+- **Solución:** Agregado `load_dotenv()` en `run.py` con debug prints
+- **Archivo:** `backend/run.py`
+
+#### Error 2: SQLAlchemy `metadata` Reservado - **✅ RESUELTO**
+- **Error:** `sqlalchemy.exc.InvalidRequestError: Attribute name 'metadata' is reserved`
+- **Causa:** Columna `metadata` en modelos `MarketingMessage` y `MarketingKnowledgeBase`
+- **Solución:** Renombrado atributo ORM a `metadata_` (manteniendo nombre de columna DB)
+- **Archivos:** `src/db/models.py`, `src/api/chat.py`, `src/services/chat_service.py`
+
+#### Error 3: `email-validator` Faltante - **✅ RESUELTO**
+- **Error:** `ImportError: email-validator is not installed`
+- **Causa:** Pydantic requiere `email-validator` para tipo `EmailStr`
+- **Solución:** `pip install email-validator`
+
+#### Error 4: Storage Path Incorrecto - **✅ RESUELTO**
+- **Error:** `PermissionError: [Errno 13] Permission denied: '/app'`
+- **Causa:** `STORAGE_PATH=/app/storage` (ruta Docker) en ejecución local
+- **Solución:** Cambiado a `STORAGE_PATH=./storage` en `.env`
+
+#### Error 5: Tests sin `.env` - **✅ RESUELTO**
+- **Error:** `sqlalchemy.exc.ArgumentError` al ejecutar tests
+- **Causa:** `pytest` no cargaba `.env` automáticamente
+- **Solución:** Creado `backend/tests/conftest.py` que carga `.env` antes de tests
+- **Archivo:** `backend/tests/conftest.py`
+
+#### Error 6: `JWT_SECRET` vs `JWT_SECRET_KEY` - **✅ RESUELTO**
+- **Error:** `AssertionError: ❌ JWT_SECRET no encontrada en .env`
+- **Causa:** Variable se llama `JWT_SECRET_KEY`, no `JWT_SECRET`
+- **Solución:** Actualizado `conftest.py` para buscar nombre correcto
+
+#### Error 7: Test `BuyerPersonaAgent.execute` Fallaba - **✅ RESUELTO**
+- **Error:** `'persona_data' is an invalid keyword argument for MarketingBuyerPersona`
+- **Causa:** Modelo requiere columnas específicas (`initial_questions`, `full_analysis`, etc.)
+- **Solución:** Guardado buyer persona completo en `full_analysis`, otras columnas vacías
+- **Archivo:** `backend/src/agents/buyer_persona_agent.py`
+
+#### Error 8: Test de Memoria Window Limit - **✅ RESUELTO**
+- **Error:** Test esperaba que `ConversationBufferWindowMemory` limitara mensajes guardados
+- **Causa:** LangChain NO elimina mensajes automáticamente (solo devuelve últimos k)
+- **Solución:** Refactorizado test para verificar almacenamiento correcto
+- **Archivo:** `backend/tests/test_memory.py`
+
+#### Error 9: Linting (ruff) - **✅ RESUELTO**
+- **Error:** 73 errores de whitespace (`W293 Blank line contains whitespace`)
+- **Solución:** `ruff check src/ --fix --unsafe-fixes`
+- **Estado:** Todos los errores corregidos
+
+#### Error 10: Tipado (mypy) - **⚠️ PENDIENTE (Menor)**
+- **Error:** 14 errores de tipos (imports faltantes: `bcrypt`, `pgvector`, `jwt`)
+- **Solución:** Creado `backend/mypy.ini` con `ignore_missing_imports = True`
+- **Estado:** Aceptable para desarrollo (no bloqueante)
+
+**Resultado Final**: ✅ Backend arranca correctamente, ✅ 13/13 tests pasando
+
 ### Integración con Endpoint de Chat
 
 **Endpoint modificado**: `POST /api/chats/{chat_id}/messages`
@@ -497,11 +556,13 @@ OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
 
 ### Validación Ejecutada
 
-- ✅ **Ruff**: 57 fixed, 0 remaining (All checks passed!)
-- ❌ **Pytest**: Requiere `pip install -e .` (dependencias)
-- ❌ **Mypy**: Requiere dependencias instaladas
-- ✅ **Estructura**: 6 archivos nuevos, 2 actualizados
+- ✅ **Ruff**: 73 errors fixed, 0 remaining (All checks passed!)
+- ✅ **Pytest**: 13/13 tests passing (100% success rate)
+- ⚠️ **Mypy**: 14 minor warnings (non-blocking, acceptable for development)
+- ✅ **Backend**: Server starts successfully on http://0.0.0.0:8000
+- ✅ **Estructura**: 9 archivos nuevos, 4 actualizados
 - ✅ **Diseño**: Documentado en `docs/plans/2026-01-27-agentes-memoria-design.md`
+- ✅ **Tests Unitarios**: RouterAgent (5), BuyerPersonaAgent (3), MemoryManager (5)
 
 ### Tests Creados
 

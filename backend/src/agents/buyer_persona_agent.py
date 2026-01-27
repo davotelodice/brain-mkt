@@ -75,10 +75,16 @@ class BuyerPersonaAgent(BaseAgent):
             buyer_persona_data = json.loads(response)
 
             # 5. Save to database
+            # TODO: Parse buyer_persona_data and distribute across correct columns
+            # For MVP, saving everything in full_analysis
             buyer_persona = MarketingBuyerPersona(
                 chat_id=chat_id,
                 project_id=project_id,
-                persona_data=buyer_persona_data
+                initial_questions={},  # TODO: Extract from buyer_persona_data
+                full_analysis=buyer_persona_data,  # Complete buyer persona
+                forum_simulation={},  # TODO: Extract from buyer_persona_data
+                pain_points={},  # TODO: Extract from buyer_persona_data
+                customer_journey={}  # TODO: Extract from buyer_persona_data
             )
 
             self.db.add(buyer_persona)
