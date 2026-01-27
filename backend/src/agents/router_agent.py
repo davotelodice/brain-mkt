@@ -103,6 +103,100 @@ class RouterAgent(BaseAgent):
             "should_execute_agent": state != AgentState.WAITING
         }
 
+    async def process_stream(
+        self,
+        chat_id: UUID,
+        project_id: UUID,
+        user_message: str
+    ):  # type: ignore[return]
+        """
+        Process message and stream response in real-time.
+
+        Flow:
+        1. Route to appropriate agent
+        2. Stream agent execution (if agent supports it)
+        3. Save final response to memory
+
+        Args:
+            chat_id: Chat ID
+            project_id: Project ID
+            user_message: User's message
+
+        Yields:
+            JSON chunks with streaming data:
+            {"type": "status", "content": "..."}
+            {"type": "chunk", "content": "..."}
+            {"type": "done", "content": "..."}
+        """
+        import json
+
+        # 1. Route to appropriate agent
+        state = await self.route(chat_id, project_id, user_message)
+        reason = self._get_state_reason(state)
+
+        # 2. Send initial status
+        yield json.dumps({"type": "status", "content": reason})
+
+        # 3. Execute agent with streaming
+        if state == AgentState.BUYER_PERSONA:
+            # Buyer Persona is NOT streamable (long analysis)
+            # Send progress updates instead
+            yield json.dumps({
+                "type": "chunk",
+                "content": "📊 Analizando perfil de cliente ideal...\n"
+            })
+
+            yield json.dumps({
+                "type": "chunk",
+                "content": "🔍 Investigando puntos de dolor...\n"
+            })
+
+            yield json.dumps({
+                "type": "chunk",
+                "content": "💡 Generando insights de marketing...\n"
+            })
+
+            # Execute (non-streaming)
+            # Note: BuyerPersonaAgent needs db parameter
+            from ..agents.buyer_persona_agent import BuyerPersonaAgent
+
+            buyer_agent = BuyerPersonaAgent(self.llm, self.memory, self.memory.db)
+            result = await buyer_agent.execute(chat_id, project_id, user_message)
+
+            if result["success"]:
+                final_content = (
+                    "✅ Buyer persona completo generado.\n\n"
+                    "Ahora puedes pedirme:\n"
+                    "- 'Dame ideas de contenido'\n"
+                    "- 'Genera posts para Instagram'\n"
+                    "- 'Crea customer journey'"
+                )
+            else:
+                final_content = f"❌ Error: {result['message']}"
+
+            yield json.dumps({"type": "chunk", "content": final_content})
+
+        elif state == AgentState.CONTENT_GENERATION:
+            # Future: Content Generator Agent with streaming
+            # For now, placeholder
+            yield json.dumps({
+                "type": "chunk",
+                "content": "🚧 Generación de contenido en desarrollo (TAREA 7+).\n"
+            })
+
+        elif state == AgentState.WAITING:
+            # Just acknowledge
+            content = (
+                "Esperando tus instrucciones. Puedes pedirme:\n"
+                "- 'Dame ideas de contenido'\n"
+                "- 'Genera posts'\n"
+                "- 'Analiza mi audiencia'"
+            )
+            yield json.dumps({"type": "chunk", "content": content})
+
+        # 4. Done signal
+        yield json.dumps({"type": "done", "content": ""})
+
     def _is_content_request(self, message: str) -> bool:
         """
         Detect if user is requesting content generation.

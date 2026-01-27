@@ -3073,9 +3073,15 @@ psql $DATABASE_URL -c "SELECT COUNT(*) FROM marketing_knowledge_base WHERE conte
   - Comando: `find_symbol('ResearchAgentDependencies', 'Context-Engineering-Intro/examples/main_agent_reference/research_agent.py', True)`
 
 - 📚 Skills:
-  - agent-memory-systems (diseño de memoria)
-  - autonomous-agents (implementación)
-  - rag-implementation (búsqueda semántica)
+  - **agent-memory-systems** (diseño de sistema de memoria multi-nivel)
+  - **autonomous-agents** (patrones de agentes autónomos y orquestación)
+  - **rag-implementation** (chunking, embeddings, búsqueda semántica)
+  - **prompt-engineering** (técnicas avanzadas de prompting para agentes)
+  - **ai-agents-architect** (arquitectura de sistemas multi-agente)
+  - **context-window-management** (gestión eficiente de contexto LLM)
+  - **llm-app-patterns** (patrones de producción para apps LLM)
+  - python-patterns (automático)
+  - clean-code (automático)
   - brainstorming (ANTES de implementar - OBLIGATORIO)
 
 **⚠️ IMPORTANTE: Esta tarea es el NÚCLEO del sistema. El agente NO genera contenido automáticamente. Solo genera cuando el usuario lo solicita explícitamente.**
@@ -3752,8 +3758,10 @@ pytest backend/tests/integration/test_full_flow.py -v
   - Comando: `find_file('ingest', 'backend/scripts/')`
 
 - 📚 Skills:
-  - rag-implementation (chunking y embeddings)
+  - **rag-implementation** (estrategias de chunking y embedding)
+  - **context-window-management** (optimización de tokens)
   - python-patterns (automático)
+  - clean-code (automático)
 
 **Objetivo:**
 Procesar las 9 transcripciones de YouTube de Andrea Estratega y cargarlas en `marketing_knowledge_base` como conocimiento global (project_id=NULL, chat_id=NULL) para que el ContentGeneratorAgent pueda usar estas técnicas al generar contenido.
@@ -3996,7 +4004,11 @@ async def search_relevant_docs(
   - Comando: `get_symbols_overview('backend/src/agents/router_agent.py')`
 
 - 📚 Skills:
+  - **api-patterns** (diseño de APIs streaming)
+  - **autonomous-agents** (orquestación de flujos multi-agente)
+  - **llm-app-patterns** (streaming, RAG, y producción)
   - python-patterns (automático)
+  - clean-code (automático)
 
 **Objetivo:**
 Implementar endpoint de chat que hace streaming de respuestas en tiempo real usando SSE (Server-Sent Events) y orquesta el flujo de agentes.
@@ -4214,9 +4226,10 @@ data: [DONE]
   - Comando: `find_file('layout.tsx', 'Context-Engineering-Intro/examples/')`
 
 - 📚 Skills:
-  - nextjs-best-practices (automático)
-  - react-patterns (automático)
-  - tailwind-patterns (automático)
+  - **nextjs-best-practices** (App Router, Server Components, middleware)
+  - **react-patterns** (hooks, composición, performance)
+  - **tailwind-patterns** (sistema de diseño, tokens)
+  - **clean-code** (código limpio y mantenible)
 
 **Objetivo:**
 Crear estructura base del frontend con autenticación, layout, y navegación usando Next.js 14 App Router.
@@ -4416,8 +4429,12 @@ async def login(request: LoginRequest, response: Response):
   - Comando: `rag_search_code_examples(query="nextjs client component useState", source_id="77b8a4a07d5230b5", match_count=3)`
 
 - 📚 Skills:
-  - react-ui-patterns (loading states, error handling)
-  - frontend-design (UI moderna)
+  - **react-ui-patterns** (loading states, error handling, async data)
+  - **frontend-design** (UI moderna y distintiva)
+  - **nextjs-best-practices** (client vs server components)
+  - **context-window-management** (gestión de mensajes largos)
+  - react-patterns (automático)
+  - clean-code (automático)
 
 **Objetivo:**
 Implementar interfaz de chat que consume el endpoint de streaming y muestra respuestas en tiempo real.
@@ -4613,7 +4630,11 @@ Solución: Directiva `'use client'` al inicio de componentes interactivos.
 - 🔧 MCP Serena: Analizar estructura de MCPs existentes
   - Comando: `get_symbols_overview('/home/david/.cursor/projects/home-david-brain-mkt/mcps/user-archon/')`
 
-- 📚 Skill: mcp-builder
+- 📚 Skills:
+  - **mcp-builder** (construcción de MCPs custom)
+  - **agent-tool-builder** (diseño de herramientas para agentes)
+  - python-patterns (automático)
+  - clean-code (automático)
 
 **Objetivo:**
 Crear MCP custom que expone herramientas del proyecto para que Cursor pueda interactuar con el sistema.
@@ -4685,7 +4706,11 @@ Crear MCP custom que expone herramientas del proyecto para que Cursor pueda inte
 - ⚡ MCP Archon: Docker best practices
   - Comando: `rag_search_knowledge_base(query="docker compose multi-container production", match_count=5)`
 
-- 📚 Skill: docker-expert
+- 📚 Skills:
+  - **docker-expert** (containerización, optimización, seguridad)
+  - **deployment-procedures** (estrategias de deployment)
+  - **server-management** (gestión de procesos y recursos)
+  - clean-code (automático)
 
 **⚠️ GOTCHA CRÍTICO APLICADO:**
 **GOTCHA 8 - Docker volumes en Windows**
@@ -4802,8 +4827,12 @@ Crear configuración de Docker para desarrollo y producción.
   - Comando: `rag_search_code_examples(query="pytest async fixtures", match_count=3)`
 
 - 📚 Skills:
-  - testing-patterns
-  - verification-before-completion
+  - **testing-patterns** (unit, integration, E2E)
+  - **verification-before-completion** (validación exhaustiva)
+  - **systematic-debugging** (debugging metódico)
+  - **test-driven-development** (TDD cuando aplique)
+  - python-patterns (automático)
+  - clean-code (automático)
 
 **Objetivo:**
 Crear suite completa de tests y documentación final del proyecto.

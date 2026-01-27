@@ -1,0 +1,83 @@
+# Environment variables (CRITICAL - NEVER COMMIT)
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Storage (local uploads)
+storage/
+uploads/
+temp/
+
+# Node modules (if frontend added later)
+node_modules/
+.next/
+out/
+
+# Docker
+docker-compose.override.yml
+
+# Documentation builds
+docs/_build/
+
+# Cursor AI
+.cursor/
+
+# Temporary files
+tmp/
+*.tmp
+*.bak
+*.swp

@@ -221,6 +221,120 @@ async def delete_chat(
     )
 
 
+@router.post("/{chat_id}/stream")
+async def stream_message(
+    chat_id: UUID,
+    request: SendMessageRequest,
+    user: MarketingUser = Depends(get_current_user),
+    chat_service: ChatService = Depends(get_chat_service),
+    agent_system=Depends(get_agent_system)
+):
+    """
+    Send message and stream response using SSE (Server-Sent Events).
+
+    ⚠️ GOTCHA 3: Este endpoint debe ser EXCLUIDO del middleware de logging
+    que lee request.body() para que el streaming funcione.
+
+    Flow:
+    1. Save user message
+    2. Router Agent decides and streams execution
+    3. Save final assistant response
+    4. Stream chunks in real-time
+
+    Args:
+        chat_id: Chat ID
+        request: Message request
+        user: Current authenticated user
+        chat_service: Chat service
+        agent_system: Agent system (router, buyer_persona, memory)
+
+    Returns:
+        StreamingResponse with SSE format (data: {...}\n\n)
+    """
+    import json
+
+    from fastapi.responses import StreamingResponse
+
+    router_agent, buyer_persona_agent, memory_manager = agent_system
+
+    # 1. Save user message
+    await chat_service.create_message(
+        chat_id=chat_id,
+        user_id=user.id,
+        project_id=user.project_id,
+        role="user",
+        content=request.content
+    )
+
+    # 2. Add to short-term memory
+    await memory_manager.add_message_to_short_term("user", request.content)
+
+    async def generate_sse():
+        """
+        Generate SSE (Server-Sent Events) stream.
+
+        SSE Format:
+        data: {"type": "status", "content": "..."}
+
+        data: {"type": "chunk", "content": "..."}
+
+        data: [DONE]
+
+        """
+        try:
+            # Accumulate final content for database
+            final_content_parts = []
+
+            # Stream agent execution
+            async for chunk_json in router_agent.process_stream(
+                chat_id=chat_id,
+                project_id=user.project_id,
+                user_message=request.content
+            ):
+                # Parse to accumulate final content
+                try:
+                    chunk_data = json.loads(chunk_json)
+                    if chunk_data.get("type") == "chunk":
+                        final_content_parts.append(chunk_data.get("content", ""))
+                except json.JSONDecodeError:
+                    pass
+
+                # Send SSE chunk
+                yield f"data: {chunk_json}\n\n"
+
+            # Save final assistant message to database
+            final_content = "".join(final_content_parts)
+            if final_content.strip():
+                await chat_service.create_message(
+                    chat_id=chat_id,
+                    user_id=user.id,
+                    project_id=user.project_id,
+                    role="assistant",
+                    content=final_content
+                )
+
+                # Add to short-term memory
+                await memory_manager.add_message_to_short_term("assistant", final_content)
+
+            # Final done signal
+            yield "data: [DONE]\n\n"
+
+        except Exception as e:
+            # Error in streaming
+            error_msg = json.dumps({"type": "error", "content": str(e)})
+            yield f"data: {error_msg}\n\n"
+
+    return StreamingResponse(
+        generate_sse(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # Disable nginx buffering
+        }
+    )
+
+
 @router.post("/{chat_id}/messages", response_model=Message)
 async def send_message(
     chat_id: UUID,
@@ -359,7 +473,7 @@ async def get_messages(
             id=msg.id,
             role=msg.role,
             content=msg.content,
-            metadata=msg.metadata,
+            metadata=msg.metadata_,  # Corregido: metadata_ es el atributo ORM
             created_at=msg.created_at
         )
         for msg in messages
