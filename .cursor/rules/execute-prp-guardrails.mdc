@@ -1,0 +1,10 @@
+## Regla: Ejecución del comando `@.cursor/commands/execute-prp-v3-es.md`
+
+- Cada tarea debe ejecutarse **paso a paso**, sin saltarse pasos del PRP.
+- Antes de avanzar, **pregunta siempre** si hay dudas de deuda técnica o contexto pendiente.
+- Si la skill no está activa, **consulta si debo activarla**; si está disponible para auto-activación, hazlo y confirma.
+- Usa **Archon de forma exhaustiva** para resolver dudas y evitar alucinaciones; cita resultados relevantes.
+- Usa **Serena MCP** para análisis simbólico y respeta el flujo definido (no leer archivos completos si no es necesario).
+- Mantén **coherencia en bases de datos**: nada hardcodeado; todos los datos deben venir de la BD o entradas del usuario.
+- Prohibido hardcodear credenciales, tokens o IDs; usa configuración/env/BD.
+- Si algo no está claro, **pregunta primero**; esto se trabaja en equipo.

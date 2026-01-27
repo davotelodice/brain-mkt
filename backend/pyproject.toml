@@ -1,0 +1,76 @@
+[project]
+name = "marketing-brain-backend"
+version = "0.1.0"
+description = "Marketing Second Brain - Backend API"
+requires-python = ">=3.11"
+dependencies = [
+    # FastAPI Core
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    
+    # Pydantic
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    
+    # Database
+    "sqlalchemy>=2.0.25",
+    "alembic>=1.13.0",
+    "asyncpg>=0.29.0",
+    "pgvector>=0.2.4",
+    
+    # AI/ML
+    "langchain>=0.1.0",
+    "langgraph>=0.0.20",
+    "openai>=1.12.0",
+    "tiktoken>=0.6.0",
+    
+    # Security
+    "bcrypt>=4.1.2",
+    "pyjwt>=2.8.0",
+    "python-multipart>=0.0.9",
+    
+    # Cache
+    "redis>=5.0.1",
+    
+    # Document Processing
+    "pypdf2>=3.0.1",
+    "python-docx>=1.1.0",
+    
+    # Utilities
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "httpx>=0.26.0",
+    "ruff>=0.1.0",
+    "mypy>=1.8.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]  # Line too long (handled by formatter)
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+addopts = "-v --cov=src --cov-report=html --cov-report=term"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
