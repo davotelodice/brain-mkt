@@ -76,6 +76,16 @@ Construir un sistema web completo ("Marketing Second Brain") que funcione como a
 11. Agente GUARDA todo en memoria (3 tipos: short-term, long-term, semantic + docs)
 12. ⏸️ **AGENTE ESPERA PETICIONES DEL USUARIO** (no genera contenido automáticamente)
 
+> ✅ **Estado actual (enero 2026, ya implementado / verificado):**
+> - **Tarea 9 (Customer Journey)**: ya existe en `backend/src/agents/buyer_persona_agent.py` (`BuyerPersonaAgent/_generate_customer_journey`) y se persiste en DB como `buyer_persona.customer_journey`. En UI se visualiza en `frontend/app/components/AnalysisPanel.tsx` (bloque “Ver customer journey (JSON)”).  
+>   - **Nota de coherencia**: hoy generamos \(por fase\) **10 `busquedas` + 10 `preguntas_cabeza`** (=20 items). Si la intención del PRP era “20 preguntas *solo* en `preguntas_cabeza`”, hay que aclararlo aquí para no “romper” lo que ya funciona.
+> - **Tarea 10 (Documento completo en Markdown)**: **no está implementada** como “export/entrega de documento completo”. Actualmente se muestran JSONs (buyer persona/foro/dolor/journey) en el panel de análisis, pero no hay “documento markdown estructurado” descargable/compartible.
+> - **Tarea 11 (Guardar todo en memoria)**: ya está **parcialmente cumplida**:
+>   - **Long-term**: buyer persona + foro + pain points + customer journey quedan en DB (modelo `BuyerPersona`).
+>   - **Short-term**: conversación reciente se mantiene (buffer) y se persiste en mensajes (DB).
+>   - **Semantic + docs**: RAG funciona y se usa en generación; documentos del usuario entran al retrieval; además existe “training summary” inyectado en prompt (con trazabilidad).
+>   - **Pendiente recomendado (sin romper nada)**: cuando se implemente Tarea 10, guardar también ese **Markdown final** como documento “snapshot” (para recuperación semántica y auditoría).
+
 #### FASE 2 - GENERACIÓN DE CONTENIDO (On-Demand):
 1. Usuario pide contenido específico (ej: "Dame 5 ideas de videos para fase de conciencia")
 2. Agente consulta:
@@ -5024,6 +5034,75 @@ Crear MCP custom que expone herramientas del proyecto para que Cursor pueda inte
 
 ---
 
+### TAREA 9.1: Edición y Eliminación Segura de Chats
+
+**Herramientas a utilizar:**
+- 🔧 MCP Serena: inspección de flujo de chats
+  - `search_for_pattern("class ChatService", "backend/src")`
+  - `search_for_pattern("Sidebar(", "frontend/app/components")`
+- 📚 Skills:
+  - **senior-fullstack**, **senior-architect**
+  - clean-code (automático)
+
+**Objetivo:**
+Permitir **renombrar** y **eliminar** chats desde el sidebar, asegurando que:
+- Al eliminar un chat:
+  - Se elimina el registro en `marketing_chats`
+  - Se eliminan en cascada SOLO los datos ligados a ese chat:
+    - mensajes (`marketing_messages`)
+    - buyer persona + foro + pain points + customer journey (`marketing_buyer_personas`)
+    - documentos y chunks asociados (`marketing_user_documents`, `marketing_knowledge_base`)
+- El frontend refresca la lista sin romper la sesión actual.
+
+**Notas de coherencia (estado actual):**
+- Backend ya tiene:
+  - `ChatService.update_chat_title(...)`
+  - `ChatService.delete_chat(...)` con `ondelete='CASCADE'` en:
+    - `MarketingMessage.chat_id`
+    - `MarketingBuyerPersona.chat_id`
+    - `MarketingKnowledgeBase.chat_id`
+    - `MarketingUserDocument.chat_id`
+  - Endpoints expuestos en `backend/src/api/chat.py`:
+    - `PATCH /api/chats/{chat_id}/title`
+    - `DELETE /api/chats/{chat_id}`
+- Frontend:
+  - `Sidebar.tsx` ya lista y crea chats, pero **aún no expone** renombrar / eliminar.
+
+**Pasos a seguir (sin romper lo existente):**
+
+1. **Frontend – API client:**
+   - Añadir en `frontend/lib/api-chat.ts`:
+     - `updateChatTitle(chatId: string, title: string): Promise<ChatSummary>`
+       - PATCH ` /api/chats/{chat_id}/title` con body `{ title }`
+     - `deleteChat(chatId: string): Promise<void>`
+       - DELETE `/api/chats/{chat_id}`
+
+2. **Frontend – Sidebar UI:**
+   - En `Sidebar.tsx`:
+     - Añadir acciones por chat:
+       - Renombrar: prompt simple (`window.prompt`) y llamada a `updateChatTitle`.
+       - Eliminar: `window.confirm` y llamada a `deleteChat`.
+     - Actualizar estado `chats` en memoria sin recargar toda la página.
+     - Si se elimina el chat activo:
+       - Seleccionar el siguiente chat disponible (o limpiar selección) y actualizar URL (`/?chat=...`).
+
+3. **Validación:**
+   - Crear >2 chats, cambiar nombres y borrar uno:
+     - Confirmar que desaparece del sidebar.
+     - Confirmar en DB (via SQL o tests) que:
+       - El chat NO existe.
+       - Buyer persona + foro + pain points + journey de ese chat NO existen.
+       - Documentos y chunks con ese `chat_id` NO existen.
+
+**Criterios de aceptación:**
+- [ ] Desde el sidebar se puede renombrar un chat sin perder mensajes.
+- [ ] Desde el sidebar se puede eliminar un chat y:
+  - Desaparece de la lista.
+  - Si era el chat activo, se selecciona otro o se deja sin selección.
+- [ ] En base de datos no quedan registros huérfanos asociados a ese `chat_id`.
+
+---
+
 ### TAREA 10: Docker + Deployment
 
 **Herramientas a utilizar:**
@@ -5144,7 +5223,7 @@ Crear configuración de Docker para desarrollo y producción.
 
 ---
 
-### TAREA 11: Testing End-to-End + Documentación Final
+### TAREA 11: Documentación Final (tests E2E parciales / futura iteración)
 
 **Herramientas a utilizar:**
 - ⚡ MCP Archon: Pytest patterns
@@ -5158,8 +5237,9 @@ Crear configuración de Docker para desarrollo y producción.
   - python-patterns (automático)
   - clean-code (automático)
 
-**Objetivo:**
-Crear suite completa de tests y documentación final del proyecto.
+**Objetivo (ajustado):**
+- En esta iteración: **documentación final del proyecto** (README, uso, gotchas, trazas).
+- Dejar **plantilla y esqueletos** de tests E2E listos, sin exigir cobertura completa ahora.
 
 **Pasos a seguir:**
 
@@ -5205,12 +5285,15 @@ Crear suite completa de tests y documentación final del proyecto.
    # Verificar en: http://localhost:8000/docs
    ```
 
-**Criterios de aceptación:**
-- [ ] Tests E2E pasan al 100%
-- [ ] Coverage >80%
-- [ ] README completo y actualizado
-- [ ] Todos los gotchas validados
-- [ ] Sistema funciona end-to-end
+**Criterios de aceptación (ajustados):**
+- [ ] README completo y actualizado (incluye:
+  - Setup backend/frontend
+  - Variables de entorno
+  - Flujo buyer persona → análisis → contenido
+  - Uso del panel Trace y flags de salud (`has_history`, `rag_used`, `training_injected`, `tecnicas_aplicadas_count`)
+- [ ] Referencia rápida de endpoints clave (auth, chats, stream, documentos, análisis)
+- [ ] Esqueletos de tests E2E creados (`backend/tests/integration/test_full_flow.py`) pero sin requerir 100% coverage en esta fase
+- [ ] Checklist de validación manual actualizado (sección “Checklist de Validación Final”)
 
 **Archivos a crear:**
 - `backend/tests/integration/test_full_flow.py`

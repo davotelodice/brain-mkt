@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { LogoutButton } from './LogoutButton'
 import type { ChatSummary } from '@/lib/types'
-import { listChats, createChat } from '@/lib/api-chat'
+import { listChats, createChat, updateChatTitle, deleteChat } from '@/lib/api-chat'
 
 interface SidebarProps {
   currentChatId?: string
@@ -39,6 +39,47 @@ export function Sidebar({ currentChatId, onChatSelect }: SidebarProps) {
       setError(err instanceof Error ? err.message : 'Failed to load chats')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handleRenameChat = async (chatId: string, currentTitle: string) => {
+    const newTitle = window.prompt('Nuevo nombre para la conversación:', currentTitle)
+    if (!newTitle || newTitle.trim() === '' || newTitle === currentTitle) return
+
+    try {
+      const updated = await updateChatTitle(chatId, newTitle.trim())
+      setChats((prev) =>
+        prev.map((chat) =>
+          chat.id === chatId ? { ...chat, title: updated.title, updated_at: updated.updated_at } : chat
+        )
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to rename chat')
+    }
+  }
+
+  const handleDeleteChat = async (chatId: string) => {
+    const confirm = window.confirm('¿Seguro que quieres eliminar esta conversación? Esta acción no se puede deshacer.')
+    if (!confirm) return
+
+    try {
+      await deleteChat(chatId)
+      setChats((prev) => prev.filter((chat) => chat.id !== chatId))
+
+      if (currentChatId === chatId) {
+        // Seleccionar otro chat si existe, si no limpiar
+        const remaining = chats.filter((chat) => chat.id !== chatId)
+        const next = remaining[0]
+        if (next) {
+          onChatSelect(next.id)
+          router.push(`/?chat=${next.id}`)
+        } else {
+          onChatSelect('')
+          router.push('/?')
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete chat')
     }
   }
 
@@ -127,30 +168,51 @@ export function Sidebar({ currentChatId, onChatSelect }: SidebarProps) {
           </div>
         ) : (
           <div className="p-2">
-            {chats.map((chat) => (
-              <button
-                key={chat.id}
-                onClick={() => {
-                  onChatSelect(chat.id)
-                  router.push(`/?chat=${chat.id}`)
-                }}
-                className={`w-full text-left p-3 rounded-lg mb-1 transition ${
-                  currentChatId === chat.id
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-300 hover:bg-gray-800'
-                }`}
-              >
-                <div className="font-medium truncate mb-1">{chat.title}</div>
-                <div className="text-xs opacity-70 flex items-center justify-between">
-                  <span>{formatDate(chat.updated_at)}</span>
-                  {chat.message_count !== undefined && (
-                    <span className="bg-gray-700 px-2 py-0.5 rounded">
-                      {chat.message_count}
-                    </span>
-                  )}
+            {chats.map((chat) => {
+              const isActive = currentChatId === chat.id
+              return (
+                <div
+                  key={chat.id}
+                  className={`w-full rounded-lg mb-1 transition ${
+                    isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800'
+                  }`}
+                >
+                  <button
+                    onClick={() => {
+                      onChatSelect(chat.id)
+                      router.push(`/?chat=${chat.id}`)
+                    }}
+                    className="w-full text-left p-3"
+                  >
+                    <div className="font-medium truncate mb-1">{chat.title}</div>
+                    <div className="text-xs opacity-70 flex items-center justify-between">
+                      <span>{formatDate(chat.updated_at)}</span>
+                      {chat.message_count !== undefined && (
+                        <span className="bg-gray-700 px-2 py-0.5 rounded">
+                          {chat.message_count}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                  <div className="flex justify-end gap-1 px-3 pb-2 text-[11px] opacity-80">
+                    <button
+                      type="button"
+                      onClick={() => handleRenameChat(chat.id, chat.title)}
+                      className="px-1 py-0.5 rounded border border-gray-600 hover:bg-gray-700"
+                    >
+                      Renombrar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteChat(chat.id)}
+                      className="px-1 py-0.5 rounded border border-red-500 text-red-300 hover:bg-red-600 hover:text-white"
+                    >
+                      Eliminar
+                    </button>
+                  </div>
                 </div>
-              </button>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
