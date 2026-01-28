@@ -1,5 +1,6 @@
 """Memory Manager - Centralized access to triple memory system."""
 
+import logging
 from uuid import UUID
 
 from langchain.memory import ConversationBufferWindowMemory
@@ -9,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db.models import MarketingBuyerPersona, MarketingMessage
 from .llm_service import LLMService
 from .rag_service import RAGService
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryManager:
@@ -185,6 +188,12 @@ class MemoryManager:
         if current_user_message:
             messages.append({"role": "user", "content": current_user_message})
 
+        logger.info(
+            "[MEM] chat_id=%s history_chars=%s messages_out=%s",
+            str(chat_id),
+            len(history_text or ""),
+            len(messages),
+        )
         return messages
 
     async def get_training_summary(self, project_id: UUID) -> str:
@@ -271,6 +280,12 @@ class MemoryManager:
         if len(summary) > 2000:
             summary = summary[:2000] + "..."
 
+        logger.info(
+            "[TRAIN] project_id=%s chunks=%s summary_chars=%s",
+            str(project_id),
+            len(training_chunks),
+            len(summary or ""),
+        )
         # TODO: Cachear en Redis (TTL 24 horas)
         # await redis.setex(cache_key, 86400, summary)
 

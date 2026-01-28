@@ -146,6 +146,7 @@ class RouterAgent(BaseAgent):
             {"type": "done", "content": "..."}
         """
         import json
+        import os
 
         # 1. Route to appropriate agent
         state = await self.route(chat_id, project_id, user_message)
@@ -153,6 +154,19 @@ class RouterAgent(BaseAgent):
 
         # 2. Send initial status
         yield json.dumps({"type": "status", "content": reason})
+
+        debug_enabled = os.getenv("SSE_DEBUG", "0") == "1"
+        if debug_enabled:
+            yield json.dumps(
+                {
+                    "type": "debug",
+                    "content": {
+                        "stage": "route",
+                        "state": str(state),
+                        "reason": reason,
+                    },
+                }
+            )
 
         # 3. Execute agent with streaming
         if state == AgentState.BUYER_PERSONA:
@@ -205,12 +219,23 @@ class RouterAgent(BaseAgent):
             content_agent = ContentGeneratorAgent(self.llm, self.memory)
             result = await content_agent.execute(chat_id, project_id, user_message)
 
+            if debug_enabled and isinstance(result, dict) and result.get("debug"):
+                yield json.dumps({"type": "debug", "content": result["debug"]})
+
             if result["success"]:
                 # Format content ideas nicely
                 ideas = result.get("content_ideas", [])
 
                 if ideas:
-                    content_text = "✨ **Ideas de Contenido Generadas:**\n\n"
+                    has_scripts = any(
+                        isinstance(idea, dict) and (idea.get("guion") or idea.get("dialogo"))
+                        for idea in ideas
+                    )
+                    content_text = (
+                        "🎬 **Guiones/Diálogos Desarrollados:**\n\n"
+                        if has_scripts
+                        else "✨ **Ideas de Contenido Generadas:**\n\n"
+                    )
 
                     for i, idea in enumerate(ideas[:10], 1):  # Max 10 ideas
                         if isinstance(idea, dict):
@@ -219,6 +244,7 @@ class RouterAgent(BaseAgent):
                             hook = idea.get("hook", "")
                             estructura = idea.get("estructura", "")
                             cta = idea.get("cta", "")
+                            guion = idea.get("guion", "") or idea.get("dialogo", "")
 
                             content_text += f"**{i}. {titulo}** ({plataforma})\n"
                             if hook:
@@ -227,12 +253,16 @@ class RouterAgent(BaseAgent):
                                 content_text += f"📋 Estructura: {estructura}\n"
                             if cta:
                                 content_text += f"📢 CTA: {cta}\n"
+                            if guion:
+                                content_text += f"🗣️ Guion/Diálogo:\n{guion}\n"
                             content_text += "\n"
                         else:
                             # Fallback for non-dict ideas
                             content_text += f"**{i}.** {str(idea)}\n\n"
 
-                    content_text += "\n💡 Estas ideas están personalizadas para tu buyer persona y usan técnicas probadas de contenido viral."
+                    content_text += (
+                        "\n💡 Estos guiones/ideas están personalizados para tu buyer persona y usan técnicas probadas de contenido viral."
+                    )
                 else:
                     content_text = result.get("message", "✅ Contenido generado correctamente.")
             else:

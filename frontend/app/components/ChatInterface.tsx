@@ -25,6 +25,8 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [showAnalysis, setShowAnalysis] = useState(false)
+  const [showTrace, setShowTrace] = useState(false)
+  const [traceEvents, setTraceEvents] = useState<unknown[]>([])
 
   // Load existing messages on mount
   useEffect(() => {
@@ -53,6 +55,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
     const userMessage = input.trim()
     setInput('')
     setError(null)
+    setTraceEvents([])
 
     // ✅ Optimistic update: Add user message immediately
     const tempUserMessage: Message = {
@@ -85,8 +88,13 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
         }
 
         if (chunk.type === 'error') {
-          setError(chunk.content)
+          setError(typeof chunk.content === 'string' ? chunk.content : 'Error desconocido')
           break
+        }
+
+        if (chunk.type === 'debug') {
+          setTraceEvents((prev) => [...prev, chunk.content])
+          continue
         }
 
         if (chunk.type === 'chunk' || chunk.type === 'status') {
@@ -162,14 +170,36 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
     <div className="flex flex-col h-full bg-white">
       <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-2">
         <div className="text-sm font-semibold text-gray-900">Chat</div>
-        <button
-          type="button"
-          onClick={() => setShowAnalysis((v) => !v)}
-          className="rounded-lg border border-gray-200 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-        >
-          {showAnalysis ? 'Ocultar análisis' : 'Ver análisis'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowTrace((v) => !v)}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+          >
+            {showTrace ? 'Ocultar trace' : 'Ver trace'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowAnalysis((v) => !v)}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+          >
+            {showAnalysis ? 'Ocultar análisis' : 'Ver análisis'}
+          </button>
+        </div>
       </div>
+
+      {showTrace ? (
+        <div className="border-b border-gray-200 px-4 py-3 bg-gray-50">
+          <div className="text-xs font-semibold text-gray-700 mb-2">Trace (SSE debug)</div>
+          {traceEvents.length === 0 ? (
+            <div className="text-xs text-gray-500">Sin eventos aún (activa `SSE_DEBUG=1` en backend).</div>
+          ) : (
+            <pre className="text-[11px] leading-snug whitespace-pre-wrap break-words bg-white border border-gray-200 rounded p-3 max-h-64 overflow-auto">
+              {JSON.stringify(traceEvents, null, 2)}
+            </pre>
+          )}
+        </div>
+      ) : null}
 
       {showAnalysis ? (
         <div className="border-b border-gray-200 px-4 py-3 bg-gray-50">

@@ -1,5 +1,6 @@
 """RAG Service - Hybrid search with reranking using pgvector."""
 
+import logging
 from uuid import UUID
 
 from sqlalchemy import text
@@ -7,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .embedding_service import EmbeddingService
 from .llm_service import LLMService
+
+logger = logging.getLogger(__name__)
 
 
 class RAGService:
@@ -76,6 +79,15 @@ class RAGService:
                 ...
             ]
         """
+        logger.info(
+            "[RAG] query_len=%s project_id=%s chat_id=%s limit=%s rerank=%s filters=%s",
+            len(query or ""),
+            str(project_id),
+            str(chat_id) if chat_id else "None",
+            limit,
+            rerank,
+            metadata_filters or {},
+        )
         # 1. Get initial results (fetch 3x for reranking)
         initial_limit = limit * 3 if rerank else limit
         initial_results = await self._vector_search(
@@ -92,8 +104,20 @@ class RAGService:
         # 3. Rerank with LLM if requested
         if rerank and self.llm_service and len(initial_results) > 0:
             reranked_results = await self._rerank_with_llm(query, initial_results)
+            logger.info(
+                "[RAG] reranked_count=%s top_types=%s top_sim=%s",
+                len(reranked_results[:limit]),
+                [d.get("content_type") for d in reranked_results[: min(limit, 3)]],
+                [round(float(d.get("similarity", 0.0)), 3) for d in reranked_results[: min(limit, 3)]],
+            )
             return reranked_results[:limit]
 
+        logger.info(
+            "[RAG] result_count=%s top_types=%s top_sim=%s",
+            len(initial_results[:limit]),
+            [d.get("content_type") for d in initial_results[: min(limit, 3)]],
+            [round(float(d.get("similarity", 0.0)), 3) for d in initial_results[: min(limit, 3)]],
+        )
         return initial_results[:limit]
 
     async def _vector_search(

@@ -1,7 +1,10 @@
 """Content Generator Agent - Generates content ideas using buyer persona + RAG techniques."""
 
+import hashlib
 import json
 import logging
+import os
+import re
 from typing import Any, cast
 from uuid import UUID
 
@@ -54,17 +57,61 @@ class ContentGeneratorAgent(BaseAgent):
                 "message": "Primero necesito generar tu buyer persona. Por favor, cuéntame sobre tu negocio."
             }
 
-        # 3. Build system prompt with training data, buyer persona, CJ, etc.
-        system_prompt = await self._build_system_prompt(context, project_id)
+        # 3. Detect follow-up requests (refinar / expandir ideas previas)
+        requested_numbers = self._extract_requested_numbers(user_message)
+        is_refine = self._is_refine_request(user_message)
 
-        # 4. Format messages with full conversation history
+        trace = os.getenv("AGENT_TRACE", "0") == "1"
+        if trace:
+            logger.info(
+                "[AGENT] chat_id=%s project_id=%s refine=%s nums=%s msg_len=%s",
+                str(chat_id),
+                str(project_id),
+                is_refine,
+                requested_numbers,
+                len(user_message or ""),
+            )
+
+        if is_refine and not requested_numbers:
+            return {
+                "success": False,
+                "content_ideas": [],
+                "message": "¿Qué ideas (números) quieres que desarrolle? Ej: 'desarrolla la 3 y la 4'."
+            }
+
+        # 4. Build system prompt with training data, buyer persona, CJ, etc.
+        system_prompt, prompt_debug = await self._build_system_prompt(
+            context=context,
+            project_id=project_id,
+            mode="refine" if is_refine else "ideas",
+            requested_numbers=requested_numbers
+        )
+
+        if trace:
+            sp = system_prompt or ""
+            sp_hash = hashlib.sha256(sp.encode("utf-8")).hexdigest()[:12]
+            logger.info("[PROMPT] system_chars=%s system_sha=%s", len(sp), sp_hash)
+            if os.getenv("AGENT_TRACE_SHOW_PROMPTS", "0") == "1":
+                logger.info("[PROMPT] system_preview=%s", sp[:1200])
+
+        # 5. Format messages with full conversation history
+        # Si es follow-up, reforzamos la instrucción para que NO genere ideas nuevas.
+        final_user_message = user_message
+        if is_refine and requested_numbers:
+            nums = ", ".join(str(n) for n in requested_numbers)
+            final_user_message = (
+                f"{user_message}\n\n"
+                f"INSTRUCCIÓN: No generes ideas nuevas. Desarrolla SOLO las ideas #{nums} de tu respuesta anterior "
+                f"(guion/diálogo listo para grabar) y responde con JSON válido."
+            )
+
         messages = self.memory.format_messages_from_memory(
             chat_id=chat_id,
             system_prompt=system_prompt,
-            current_user_message=user_message
+            current_user_message=final_user_message
         )
 
-        # 5. Generate content ideas with full conversation history
+        # 6. Generate content ideas with full conversation history
         try:
             # Calculate approximate tokens in messages to ensure we have enough for response
             # Rough estimate: 1 token ≈ 4 characters
@@ -87,15 +134,52 @@ class ContentGeneratorAgent(BaseAgent):
             response_preview = response[:500] if len(response) > 500 else response
             logger.info(f"LLM response preview: {response_preview}...")
 
-            # 6. Parse response (can be JSON or markdown)
+            # 7. Parse response (can be JSON or markdown)
             content_ideas = self._parse_content_response(response)
 
             logger.info(f"Parsed {len(content_ideas)} content ideas")
 
+            debug: dict[str, Any] = {}
+            if trace or os.getenv("SSE_DEBUG", "0") == "1":
+                # History length (best-effort)
+                history_text = ""
+                try:
+                    history_text = (
+                        self.memory._get_short_term(chat_id)  # type: ignore[attr-defined]
+                        .load_memory_variables({})
+                        .get("history", "")
+                    )
+                except Exception:
+                    history_text = ""
+
+                # RAG stats from context
+                relevant_docs = context.get("relevant_docs", []) or []
+                counts: dict[str, int] = {}
+                for d in relevant_docs:
+                    t = (d.get("content_type") or "unknown") if isinstance(d, dict) else "unknown"
+                    counts[t] = counts.get(t, 0) + 1
+
+                debug = {
+                    "stage": "content_generation",
+                    "mode": "refine" if is_refine else "ideas",
+                    "requested_numbers": requested_numbers,
+                    "history_chars": len(history_text or ""),
+                    "messages_count": len(messages),
+                    "estimated_input_tokens": int(estimated_input_tokens),
+                    "max_tokens": int(max_tokens),
+                    "system_prompt_chars": len(system_prompt or ""),
+                    "system_prompt_sha": hashlib.sha256((system_prompt or "").encode("utf-8")).hexdigest()[:12],
+                    "rag_relevant_docs_total": len(relevant_docs),
+                    "rag_relevant_docs_by_type": counts,
+                    "document_summaries_count": len(context.get("document_summaries", []) or []),
+                    **prompt_debug,
+                }
+
             return {
                 "success": True,
                 "content_ideas": content_ideas,
-                "message": f"✅ Generé {len(content_ideas)} ideas de contenido personalizadas."
+                "message": f"✅ Generé {len(content_ideas)} ideas de contenido personalizadas.",
+                "debug": debug,
             }
 
         except Exception as e:
@@ -105,7 +189,49 @@ class ContentGeneratorAgent(BaseAgent):
                 "message": f"Error al generar contenido: {str(e)}"
             }
 
-    async def _build_system_prompt(self, context: dict, project_id: UUID) -> str:
+    def _extract_requested_numbers(self, message: str) -> list[int]:
+        """
+        Extrae números de ideas referenciadas (ej: "la 3 y la 4", "2,3", "idea 5").
+        """
+        text = (message or "").lower()
+        # Captura números aislados pero evita años (2025, 2026) limitando a 1-2 dígitos
+        nums = re.findall(r"\b(\d{1,2})\b", text)
+        out: list[int] = []
+        for n in nums:
+            try:
+                v = int(n)
+                if 1 <= v <= 20:
+                    out.append(v)
+            except ValueError:
+                continue
+        # Mantener orden y únicos
+        seen: set[int] = set()
+        uniq: list[int] = []
+        for v in out:
+            if v not in seen:
+                uniq.append(v)
+                seen.add(v)
+        return uniq
+
+    def _is_refine_request(self, message: str) -> bool:
+        """
+        Detecta follow-ups del tipo: "desarrolla los diálogos de la 3 y la 4".
+        """
+        text = (message or "").strip().lower()
+        if not text:
+            return False
+        refine_verbs = r"(desarrolla(me)?|detalla|profundiza|expande|contin[uú]a|guion|guiones|di[aá]logo|di[aá]logos|script)"
+        has_refine = re.search(rf"\b{refine_verbs}\b", text) is not None
+        has_numbers = re.search(r"\b\d{1,2}\b", text) is not None
+        return has_refine and has_numbers
+
+    async def _build_system_prompt(
+        self,
+        context: dict,
+        project_id: UUID,
+        mode: str = "ideas",
+        requested_numbers: list[int] | None = None,
+    ) -> tuple[str, dict[str, Any]]:
         """
         Build system prompt with training data, buyer persona, CJ, and documents.
 
@@ -119,12 +245,18 @@ class ContentGeneratorAgent(BaseAgent):
         Args:
             context: Context dictionary from memory manager
             project_id: Project ID for training summary
+            mode: "ideas" (default) o "refine" (expandir ideas previas)
+            requested_numbers: lista de números de ideas a expandir si mode="refine"
 
         Returns:
             Complete system prompt string
         """
         # 1. Get training summary (cacheado, siempre disponible)
         training_summary = await self.memory.get_training_summary(project_id)
+        prompt_debug: dict[str, Any] = {
+            "training_summary_chars": len(training_summary or ""),
+            "training_summary_sha": hashlib.sha256((training_summary or "").encode("utf-8")).hexdigest()[:12],
+        }
 
         # 2. Format buyer persona
         buyer_persona = context.get('buyer_persona')
@@ -227,7 +359,15 @@ para redes sociales (TikTok, Instagram, YouTube).
 CRÍTICO: Responde SOLO con JSON válido. No incluyas texto antes o después del JSON.
 No uses markdown, no uses explicaciones. SOLO el objeto JSON.
 
-Estructura requerida:
+SI el usuario está pidiendo IDEAS nuevas:
+- Genera ideas nuevas (mínimo 5)
+
+SI el usuario está pidiendo REFINAR/EXPANDIR ideas anteriores (ej: "desarrolla la 3 y la 4"):
+- NO generes ideas nuevas
+- Usa el historial de conversación para localizar las ideas numeradas de tu respuesta anterior
+- Devuelve SOLO esas ideas con guion/diálogo listo para grabar
+
+Estructura requerida (siempre):
 
 {{
   "ideas": [
@@ -237,14 +377,14 @@ Estructura requerida:
       "hook": "Primeras 3 segundos que captan atención",
       "estructura": "Descripción de cómo desarrollar el contenido",
       "cta": "Call-to-action específico",
-      "por_que_viral": "Por qué esta idea funcionará para este buyer persona"
+      "por_que_viral": "Por qué esta idea funcionará para este buyer persona",
+      "guion": "Opcional: guion/diálogo completo (si el usuario pide desarrollar ideas)"
     }},
     ...
   ]
 }}
 
 REGLAS ESTRICTAS:
-- Genera mínimo 5 ideas (ideal 7-10)
 - Responde SOLO con el objeto JSON, sin texto adicional
 - No uses ```json o markdown
 - Asegúrate de que el JSON esté completo y válido
@@ -254,7 +394,7 @@ REGLAS ESTRICTAS:
 
 RESPONDE AHORA CON EL JSON:"""
 
-        return system_prompt
+        return system_prompt, prompt_debug
 
     def _parse_content_response(self, response: str) -> list[dict]:
         """
