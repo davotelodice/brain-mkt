@@ -2,6 +2,7 @@
 
 import os
 from collections.abc import AsyncIterator
+from typing import cast
 
 from openai import APIError, APITimeoutError, AsyncOpenAI, RateLimitError
 from tenacity import (
@@ -85,7 +86,10 @@ class LLMService:
             temperature=temperature
         )
 
-        return response.choices[0].message.content
+        content = response.choices[0].message.content
+        if content is None:
+            raise ValueError("LLM returned None content")
+        return cast(str, content)
 
     @retry(
         stop=stop_after_attempt(3),
@@ -122,6 +126,122 @@ class LLMService:
             messages.append({"role": "system", "content": system})
 
         messages.append({"role": "user", "content": prompt})
+
+        stream = await self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stream=True
+        )
+
+        async for chunk in stream:
+            if chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((RateLimitError, APITimeoutError, APIError))
+    )
+    async def generate_with_messages(
+        self,
+        messages: list[dict[str, str]],
+        max_tokens: int = 4096,
+        temperature: float = 0.7
+    ) -> str:
+        """
+        Generate text with full conversation history.
+
+        Args:
+            messages: List of message dicts with "role" and "content"
+                Format: [{"role": "system", "content": "..."},
+                         {"role": "user", "content": "..."},
+                         {"role": "assistant", "content": "..."}, ...]
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature (0.0-1.0)
+
+        Returns:
+            Generated text
+
+        Raises:
+            ValueError: If messages format is invalid
+            RateLimitError: After 3 retry attempts
+            APITimeoutError: After 3 retry attempts
+            APIError: After 3 retry attempts
+        """
+        # CRÍTICO: Validar formato de messages
+        if not messages or not isinstance(messages, list):
+            raise ValueError("messages must be a non-empty list")
+
+        for i, msg in enumerate(messages):
+            if not isinstance(msg, dict):
+                raise ValueError(f"Message {i} must be a dict, got {type(msg)}")
+            if "role" not in msg or "content" not in msg:
+                raise ValueError(f"Message {i} must have 'role' and 'content' keys")
+            if msg["role"] not in ["system", "user", "assistant"]:
+                raise ValueError(
+                    f"Message {i} has invalid role: {msg['role']}. "
+                    "Must be 'system', 'user', or 'assistant'"
+                )
+
+        response = await self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
+
+        content = response.choices[0].message.content
+        if content is None:
+            raise ValueError("LLM returned None content")
+        return cast(str, content)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((RateLimitError, APITimeoutError, APIError))
+    )
+    async def stream_with_messages(
+        self,
+        messages: list[dict[str, str]],
+        max_tokens: int = 4096,
+        temperature: float = 0.7
+    ) -> AsyncIterator[str]:
+        """
+        Generate text with streaming and full conversation history.
+
+        Args:
+            messages: List of message dicts with "role" and "content"
+                Format: [{"role": "system", "content": "..."},
+                         {"role": "user", "content": "..."},
+                         {"role": "assistant", "content": "..."}, ...]
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature (0.0-1.0)
+
+        Yields:
+            Text chunks as they are generated
+
+        Raises:
+            ValueError: If messages format is invalid
+            RateLimitError: After 3 retry attempts
+            APITimeoutError: After 3 retry attempts
+            APIError: After 3 retry attempts
+        """
+        # CRÍTICO: Validar formato de messages (misma validación que generate_with_messages)
+        if not messages or not isinstance(messages, list):
+            raise ValueError("messages must be a non-empty list")
+
+        for i, msg in enumerate(messages):
+            if not isinstance(msg, dict):
+                raise ValueError(f"Message {i} must be a dict, got {type(msg)}")
+            if "role" not in msg or "content" not in msg:
+                raise ValueError(f"Message {i} must have 'role' and 'content' keys")
+            if msg["role"] not in ["system", "user", "assistant"]:
+                raise ValueError(
+                    f"Message {i} has invalid role: {msg['role']}. "
+                    "Must be 'system', 'user', or 'assistant'"
+                )
 
         stream = await self.client.chat.completions.create(
             model=self.model,

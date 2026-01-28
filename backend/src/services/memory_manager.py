@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import MarketingBuyerPersona, MarketingMessage
+from .llm_service import LLMService
 from .rag_service import RAGService
 
 
@@ -21,16 +22,18 @@ class MemoryManager:
     All agents access memory through this single interface.
     """
 
-    def __init__(self, db: AsyncSession, rag_service: RAGService):
+    def __init__(self, db: AsyncSession, rag_service: RAGService, llm_service: LLMService | None = None):
         """
         Initialize memory manager.
 
         Args:
             db: Async database session
             rag_service: RAG service for semantic search
+            llm_service: Optional LLM service for generating training summaries
         """
         self.db = db
         self.rag_service = rag_service
+        self.llm_service = llm_service
 
         # Short-term memory MUST be per chat_id (avoid cross-chat leakage)
         self._short_term_by_chat: dict[UUID, ConversationBufferWindowMemory] = {}
@@ -130,6 +133,148 @@ class MemoryManager:
             mem.chat_memory.add_user_message(content)
         elif role == "assistant":
             mem.chat_memory.add_ai_message(content)
+
+    def format_messages_from_memory(
+        self,
+        chat_id: UUID,
+        system_prompt: str = "",
+        current_user_message: str = ""
+    ) -> list[dict[str, str]]:
+        """
+        Convert ConversationBufferWindowMemory to OpenAI messages format.
+
+        VERIFICADO: load_memory_variables({}) retorna {"history": "Human: ...\\nAI: ..."}
+
+        Args:
+            chat_id: Chat ID
+            system_prompt: Optional system prompt to prepend
+            current_user_message: Optional current user message to append
+
+        Returns:
+            List of message dicts in OpenAI format:
+            [{"role": "system", "content": "..."},
+             {"role": "user", "content": "..."},
+             {"role": "assistant", "content": "..."}, ...]
+        """
+        messages: list[dict[str, str]] = []
+
+        # 1. System prompt primero (si se proporciona)
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+
+        # 2. Obtener historial de ConversationBufferWindowMemory
+        memory = self._get_short_term(chat_id)
+        history_dict = memory.load_memory_variables({})
+        history_text = history_dict.get("history", "")
+
+        # 3. Parsear formato "Human: ...\\nAI: ..."
+        if history_text and isinstance(history_text, str):
+            lines = history_text.strip().split("\n")
+            for line in lines:
+                line = line.strip()
+                if line.startswith("Human:"):
+                    content = line.replace("Human:", "").strip()
+                    if content:
+                        messages.append({"role": "user", "content": content})
+                elif line.startswith("AI:"):
+                    content = line.replace("AI:", "").strip()
+                    if content:
+                        messages.append({"role": "assistant", "content": content})
+
+        # 4. Añadir mensaje actual del usuario (si se proporciona)
+        if current_user_message:
+            messages.append({"role": "user", "content": current_user_message})
+
+        return messages
+
+    async def get_training_summary(self, project_id: UUID) -> str:
+        """
+        Obtener resumen de técnicas de las transcripciones de Andrea Estratega (cacheado).
+
+        Estrategia:
+        1. Buscar chunks más representativos de técnicas virales
+        2. Generar resumen estructurado con LLM (una vez, cachear 24h)
+        3. Retornar resumen para inyectar en system prompt
+
+        Args:
+            project_id: Project ID (para cache key, aunque transcripciones son globales)
+
+        Returns:
+            Resumen de técnicas en formato texto listo para system prompt
+        """
+        if not self.llm_service:
+            return "No hay LLM service disponible para generar resumen de técnicas."
+
+        # TODO: Implementar cache en Redis (por ahora sin cache)
+        # cache_key = f"training_summary_{project_id}"
+        # cached = await redis.get(cache_key)
+        # if cached:
+        #     return cached
+
+        # 1. Buscar chunks representativos de técnicas virales
+        # Nota: Usamos project_id para la búsqueda aunque las transcripciones son globales
+        # RAGService filtrará por metadata_filters para obtener solo video_transcript
+        training_chunks = await self.rag_service.search_relevant_docs(
+            query="técnicas virales hooks estructuras contenido Instagram TikTok",
+            project_id=project_id,  # Usar project_id aunque transcripciones sean globales
+            chat_id=None,
+            limit=15,  # Top 15 chunks más relevantes
+            metadata_filters={"content_type": "video_transcript"},
+            rerank=True  # Mejor relevancia
+        )
+
+        if not training_chunks:
+            return "No hay transcripciones de entrenamiento disponibles aún."
+
+        # 2. Combinar chunks en texto
+        techniques_text = "\n\n---\n\n".join([
+            f"**TÉCNICA {i+1}** (de: {chunk.get('source_title', 'Desconocido')}):\n{chunk.get('content', '')[:800]}"
+            for i, chunk in enumerate(training_chunks)
+        ])
+
+        # 3. Generar resumen estructurado
+        summary_prompt = f"""
+        Resume las técnicas principales de creación de contenido viral
+        de estas transcripciones de videos de marketing de Andrea Estratega:
+
+        {techniques_text}
+
+        Crea un resumen estructurado y conciso (máximo 1500 palabras) con:
+
+        1. TÉCNICAS DE HOOKS (primeros 3 segundos):
+           - Ejemplos específicos
+           - Patrones que funcionan
+
+        2. ESTRUCTURAS DE CONTENIDO:
+           - Formatos probados
+           - Orden de elementos
+
+        3. TÉCNICAS VIRALES:
+           - Qué hace que un contenido se vuelva viral
+           - Elementos clave
+
+        4. CTAs EFECTIVOS:
+           - Cómo cerrar contenido para acción
+
+        Formato: Texto claro, listo para usar en system prompt de un LLM.
+        Sé específico con ejemplos reales de las transcripciones.
+        """
+
+        summary = await self.llm_service.generate(
+            prompt=summary_prompt,
+            system="Eres un experto en resumir técnicas de marketing de forma estructurada y concisa.",
+            max_tokens=1500,  # Reducido para evitar prompts muy largos
+            temperature=0.3  # Baja temperatura para resumen fiel
+        )
+
+        # Truncar si es demasiado largo (máximo ~2000 caracteres ≈ 500 tokens)
+        if len(summary) > 2000:
+            summary = summary[:2000] + "..."
+
+        # TODO: Cachear en Redis (TTL 24 horas)
+        # await redis.setex(cache_key, 86400, summary)
+
+        return summary
 
     async def _get_buyer_persona_row(
         self,
@@ -240,6 +385,9 @@ class MemoryManager:
 
         # Add to short-term memory (reverse order: oldest first)
         for message in reversed(messages):
+            # Validate that role and content are not None (mypy type checking)
+            if message.role is None or message.content is None:
+                continue
             await self.add_message_to_short_term(
                 chat_id=chat_id,
                 role=message.role,

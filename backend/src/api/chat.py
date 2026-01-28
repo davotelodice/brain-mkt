@@ -52,7 +52,7 @@ def get_agent_system(db: AsyncSession = Depends(get_db)):
     llm_service = LLMService()
     embedding_service = EmbeddingService()
     rag_service = RAGService(db, embedding_service)
-    memory_manager = MemoryManager(db, rag_service)
+    memory_manager = MemoryManager(db, rag_service, llm_service)
 
     # Initialize agents
     router_agent = RouterAgent(llm_service, memory_manager)

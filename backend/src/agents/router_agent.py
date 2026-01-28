@@ -81,7 +81,13 @@ class RouterAgent(BaseAgent):
         if self._is_content_request(user_message):
             return AgentState.CONTENT_GENERATION
 
-        # Default: Just waiting for user request
+        # Priority 4: Conversational fallback cuando YA hay buyer persona.
+        # Cualquier mensaje no vacío después de tener buyer persona
+        # se trata como parte de la conversación de contenido.
+        if context["has_buyer_persona"] and user_message.strip():
+            return AgentState.CONTENT_GENERATION
+
+        # Default: Just waiting for user request (sin buyer persona)
         return AgentState.WAITING
 
     async def execute(
