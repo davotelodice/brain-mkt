@@ -29,7 +29,8 @@ class ContentGeneratorAgent(BaseAgent):
         self,
         chat_id: UUID,
         project_id: UUID,
-        user_message: str
+        user_message: str,
+        context_override: dict | None = None,
     ) -> dict:
         """
         Generate content ideas based on buyer persona and RAG techniques.
@@ -47,7 +48,8 @@ class ContentGeneratorAgent(BaseAgent):
             }
         """
         # 1. Get context (buyer persona + relevant docs)
-        context = await self._get_context(chat_id, project_id, user_message)
+        # PERF: allow caller to pass a precomputed context to avoid double RAG.
+        context = context_override or await self._get_context(chat_id, project_id, user_message)
 
         # 2. Check if buyer persona exists
         if not context['has_buyer_persona']:
@@ -60,6 +62,7 @@ class ContentGeneratorAgent(BaseAgent):
         # 3. Detect follow-up requests (refinar / expandir ideas previas)
         requested_numbers = self._extract_requested_numbers(user_message)
         is_refine = self._is_refine_request(user_message)
+        mode = self._select_mode(user_message, is_refine)
 
         trace = os.getenv("AGENT_TRACE", "0") == "1"
         if trace:
@@ -83,7 +86,7 @@ class ContentGeneratorAgent(BaseAgent):
         system_prompt, prompt_debug = await self._build_system_prompt(
             context=context,
             project_id=project_id,
-            mode="refine" if is_refine else "ideas",
+            mode=mode,
             requested_numbers=requested_numbers
         )
 
@@ -134,10 +137,16 @@ class ContentGeneratorAgent(BaseAgent):
             response_preview = response[:500] if len(response) > 500 else response
             logger.info(f"LLM response preview: {response_preview}...")
 
-            # 7. Parse response (can be JSON or markdown)
-            content_ideas = self._parse_content_response(response)
+            content_ideas: list[dict[str, Any]] = []
+            content_text: str = ""
 
-            logger.info(f"Parsed {len(content_ideas)} content ideas")
+            if mode == "ideas_json":
+                # 7. Parse response (JSON ideas)
+                content_ideas = cast(list[dict[str, Any]], self._parse_content_response(response))
+                logger.info(f"Parsed {len(content_ideas)} content ideas")
+            else:
+                # 7. Consultivo: texto libre (mantener conversación, auditoría, estrategia, etc.)
+                content_text = (response or "").strip()
 
             debug: dict[str, Any] = {}
             if trace or os.getenv("SSE_DEBUG", "0") == "1":
@@ -161,7 +170,7 @@ class ContentGeneratorAgent(BaseAgent):
 
                 debug = {
                     "stage": "content_generation",
-                    "mode": "refine" if is_refine else "ideas",
+                    "mode": mode,
                     "requested_numbers": requested_numbers,
                     "history_chars": len(history_text or ""),
                     "messages_count": len(messages),
@@ -178,7 +187,12 @@ class ContentGeneratorAgent(BaseAgent):
             return {
                 "success": True,
                 "content_ideas": content_ideas,
-                "message": f"✅ Generé {len(content_ideas)} ideas de contenido personalizadas.",
+                "content_text": content_text,
+                "message": (
+                    f"✅ Generé {len(content_ideas)} ideas de contenido personalizadas."
+                    if mode == "ideas_json"
+                    else "✅ Respuesta generada."
+                ),
                 "debug": debug,
             }
 
@@ -225,6 +239,29 @@ class ContentGeneratorAgent(BaseAgent):
         has_numbers = re.search(r"\b\d{1,2}\b", text) is not None
         return has_refine and has_numbers
 
+    def _select_mode(self, message: str, is_refine: bool) -> str:
+        """
+        Decide el modo de respuesta:
+        - ideas_json: cuando el usuario pide ideas/hook/ganchos en bulk.
+        - consultivo: auditoría, estrategia, preguntas, mejoras, follow-ups.
+        """
+        if is_refine:
+            return "consultivo"
+
+        text = (message or "").lower()
+        # Bulk ideas requests: "dame 5 ideas", "3 ganchos", "10 hooks", etc.
+        if re.search(r"\b\d{1,2}\b", text) and re.search(
+            r"\b(ideas?|ganchos?|hooks?|reels?|tiktoks?|shorts?|posts?)\b", text
+        ):
+            return "ideas_json"
+        if re.search(r"\b(dame|genera|crea|propon|sugi[eé]reme)\b", text) and re.search(
+            r"\b(ideas?|ganchos?|hooks?|reels?|tiktoks?|shorts?|posts?)\b", text
+        ):
+            return "ideas_json"
+
+        # Otherwise: consultivo/free-form
+        return "consultivo"
+
     async def _build_system_prompt(
         self,
         context: dict,
@@ -252,10 +289,14 @@ class ContentGeneratorAgent(BaseAgent):
             Complete system prompt string
         """
         # 1. Get training summary (cacheado, siempre disponible)
+        cache_hit = False
+        # Best-effort: detect cache hit by calling twice is bad, so infer from log is enough.
+        # We'll set cache_hit later via hash stability in Trace; for now leave explicit field.
         training_summary = await self.memory.get_training_summary(project_id)
         prompt_debug: dict[str, Any] = {
             "training_summary_chars": len(training_summary or ""),
             "training_summary_sha": hashlib.sha256((training_summary or "").encode("utf-8")).hexdigest()[:12],
+            "training_summary_cache_hit": cache_hit,
         }
 
         # 2. Format buyer persona
@@ -324,8 +365,60 @@ class ContentGeneratorAgent(BaseAgent):
         if not user_docs_text:
             user_docs_text = "No hay documentos adicionales."
 
-        system_prompt = f"""Eres un experto en marketing digital especializado en crear contenido viral
-para redes sociales (TikTok, Instagram, YouTube).
+        # --- Prompt base (consultivo) ---
+        base_consultivo = """## TU ROL Y CAPACIDADES:
+
+Eres un estratega de marketing digital especializado en contenido para redes sociales.
+
+## TU METODOLOGÍA DE TRABAJO:
+
+PASO 1: Entender la petición (qué servicio necesita y nivel de detalle)
+PASO 2: Analizar contexto (buyer persona, pain points, journey, técnicas de entrenamiento)
+PASO 3: Aplicar expertise (específico, accionable, no genérico)
+PASO 4: Entregar valor (formato adecuado a la petición)
+
+## PRINCIPIOS:
+✅ especificidad, accionabilidad, fundamentación, versatilidad, memoria
+❌ evita genérico e ignorar contexto
+"""
+
+        # --- Prompt base (JSON bulk ideas) ---
+        base_ideas_json = "Eres un experto en marketing digital especializado en crear contenido viral."
+
+        format_section = (
+            """CRÍTICO: Responde SOLO con JSON válido. No incluyas texto antes o después del JSON.
+No uses markdown.
+
+Estructura requerida:
+{
+  "ideas": [
+    {
+      "titulo": "Título descriptivo",
+      "plataforma": "TikTok | Instagram | YouTube | Ambas",
+      "formato": "Reel | Carrusel | Historia | Post | Short",
+      "hook": "Primeras 3 segundos",
+      "estructura": "Desarrollo del contenido",
+      "cta": "Call-to-action específico",
+      "por_que_funciona": "Conexión técnica + buyer persona + pain point",
+      "guion": "(Opcional) Diálogo/texto completo"
+    }
+  ]
+}
+
+REGLAS:
+- mínimo 5 ideas
+- SOLO JSON
+- nada de texto extra
+
+RESPONDE AHORA CON EL JSON:"""
+            if mode == "ideas_json"
+            else """Responde en el formato más apropiado a la petición del cliente.
+NO fuerces JSON si no es necesario.
+Si el usuario pide desarrollar una idea, entrega guion completo + caption + recomendaciones.
+"""
+        )
+
+        system_prompt = f"""{base_ideas_json if mode == "ideas_json" else base_consultivo}
 
 ## TÉCNICAS DE ENTRENAMIENTO (de Andrea Estratega - experta en contenido viral):
 {training_summary}
@@ -356,43 +449,7 @@ para redes sociales (TikTok, Instagram, YouTube).
 
 ## FORMATO DE RESPUESTA:
 
-CRÍTICO: Responde SOLO con JSON válido. No incluyas texto antes o después del JSON.
-No uses markdown, no uses explicaciones. SOLO el objeto JSON.
-
-SI el usuario está pidiendo IDEAS nuevas:
-- Genera ideas nuevas (mínimo 5)
-
-SI el usuario está pidiendo REFINAR/EXPANDIR ideas anteriores (ej: "desarrolla la 3 y la 4"):
-- NO generes ideas nuevas
-- Usa el historial de conversación para localizar las ideas numeradas de tu respuesta anterior
-- Devuelve SOLO esas ideas con guion/diálogo listo para grabar
-
-Estructura requerida (siempre):
-
-{{
-  "ideas": [
-    {{
-      "titulo": "Título descriptivo de la idea",
-      "plataforma": "TikTok" | "Instagram" | "Ambas",
-      "hook": "Primeras 3 segundos que captan atención",
-      "estructura": "Descripción de cómo desarrollar el contenido",
-      "cta": "Call-to-action específico",
-      "por_que_viral": "Por qué esta idea funcionará para este buyer persona",
-      "guion": "Opcional: guion/diálogo completo (si el usuario pide desarrollar ideas)"
-    }},
-    ...
-  ]
-}}
-
-REGLAS ESTRICTAS:
-- Responde SOLO con el objeto JSON, sin texto adicional
-- No uses ```json o markdown
-- Asegúrate de que el JSON esté completo y válido
-- Sé específico y personalizado (no genérico)
-- Usa técnicas reales de las transcripciones
-- Adapta al buyer persona específico
-
-RESPONDE AHORA CON EL JSON:"""
+{format_section}"""
 
         return system_prompt, prompt_debug
 

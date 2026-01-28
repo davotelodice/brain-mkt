@@ -1,6 +1,7 @@
 """Memory Manager - Centralized access to triple memory system."""
 
 import logging
+import time
 from uuid import UUID
 
 from langchain.memory import ConversationBufferWindowMemory
@@ -41,6 +42,8 @@ class MemoryManager:
         # Short-term memory MUST be per chat_id (avoid cross-chat leakage)
         self._short_term_by_chat: dict[UUID, ConversationBufferWindowMemory] = {}
         self._loaded_chats: set[UUID] = set()
+        # Cache (in-memory) for training summaries (TTL seconds)
+        self._training_summary_cache: dict[str, tuple[str, float]] = {}
 
     def _get_short_term(self, chat_id: UUID) -> ConversationBufferWindowMemory:
         if chat_id not in self._short_term_by_chat:
@@ -214,11 +217,13 @@ class MemoryManager:
         if not self.llm_service:
             return "No hay LLM service disponible para generar resumen de técnicas."
 
-        # TODO: Implementar cache en Redis (por ahora sin cache)
-        # cache_key = f"training_summary_{project_id}"
-        # cached = await redis.get(cache_key)
-        # if cached:
-        #     return cached
+        cache_ttl = int(time.time()) + 86400
+        cache_key = f"training_summary:{project_id}"
+        cached = self._training_summary_cache.get(cache_key)
+        if cached and cached[1] > time.time():
+            logger.info("[TRAIN] cache_hit=1 project_id=%s", str(project_id))
+            return cached[0]
+        logger.info("[TRAIN] cache_hit=0 project_id=%s", str(project_id))
 
         # 1. Buscar chunks representativos de técnicas virales
         # Nota: Usamos project_id para la búsqueda aunque las transcripciones son globales
@@ -286,8 +291,8 @@ class MemoryManager:
             len(training_chunks),
             len(summary or ""),
         )
-        # TODO: Cachear en Redis (TTL 24 horas)
-        # await redis.setex(cache_key, 86400, summary)
+        # Cache in-memory (TTL 24h)
+        self._training_summary_cache[cache_key] = (summary, float(cache_ttl))
 
         return summary
 

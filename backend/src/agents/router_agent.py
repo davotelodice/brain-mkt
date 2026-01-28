@@ -90,6 +90,29 @@ class RouterAgent(BaseAgent):
         # Default: Just waiting for user request (sin buyer persona)
         return AgentState.WAITING
 
+    def _route_with_context(self, context: dict, user_message: str) -> AgentState:
+        """
+        Route using an already computed context.
+        This avoids calling MemoryManager.get_context twice (and therefore double RAG).
+        """
+        # Priority 1: If no buyer persona, check if we have enough info
+        if not context.get("has_buyer_persona"):
+            has_business_info = self._has_business_information(
+                user_message,
+                context.get("recent_chat", {}),
+            )
+            return AgentState.BUYER_PERSONA if has_business_info else AgentState.WAITING
+
+        # Priority 3: If user explicitly requests content generation
+        if self._is_content_request(user_message):
+            return AgentState.CONTENT_GENERATION
+
+        # Priority 4: Conversational fallback when buyer persona exists
+        if context.get("has_buyer_persona") and (user_message or "").strip():
+            return AgentState.CONTENT_GENERATION
+
+        return AgentState.WAITING
+
     async def execute(
         self,
         chat_id: UUID,
@@ -148,8 +171,11 @@ class RouterAgent(BaseAgent):
         import json
         import os
 
-        # 1. Route to appropriate agent
-        state = await self.route(chat_id, project_id, user_message)
+        # 1. Compute context ONCE (avoid double RAG)
+        context = await self._get_context(chat_id, project_id, user_message)
+
+        # 2. Route using computed context
+        state = self._route_with_context(context, user_message)
         reason = self._get_state_reason(state)
 
         # 2. Send initial status
@@ -217,7 +243,12 @@ class RouterAgent(BaseAgent):
             from ..agents.content_generator_agent import ContentGeneratorAgent
 
             content_agent = ContentGeneratorAgent(self.llm, self.memory)
-            result = await content_agent.execute(chat_id, project_id, user_message)
+            result = await content_agent.execute(
+                chat_id,
+                project_id,
+                user_message,
+                context_override=context,
+            )
 
             if debug_enabled and isinstance(result, dict) and result.get("debug"):
                 yield json.dumps({"type": "debug", "content": result["debug"]})
@@ -225,6 +256,7 @@ class RouterAgent(BaseAgent):
             if result["success"]:
                 # Format content ideas nicely
                 ideas = result.get("content_ideas", [])
+                content_text_override = result.get("content_text", "") or ""
 
                 if ideas:
                     has_scripts = any(
@@ -264,7 +296,12 @@ class RouterAgent(BaseAgent):
                         "\n💡 Estos guiones/ideas están personalizados para tu buyer persona y usan técnicas probadas de contenido viral."
                     )
                 else:
-                    content_text = result.get("message", "✅ Contenido generado correctamente.")
+                    # Consultivo (texto libre) o fallback
+                    content_text = (
+                        content_text_override
+                        if content_text_override.strip()
+                        else result.get("message", "✅ Contenido generado correctamente.")
+                    )
             else:
                 content_text = f"❌ {result.get('message', 'Error al generar contenido')}"
 
@@ -272,8 +309,6 @@ class RouterAgent(BaseAgent):
 
         elif state == AgentState.WAITING:
             # Check if we need to ask for business info first
-            context = await self._get_context(chat_id, project_id, user_message)
-
             if not context['has_buyer_persona']:
                 # ✅ Onboarding: Ask for business information
                 content = (
