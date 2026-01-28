@@ -54,7 +54,8 @@ class ContentGeneratorAgent(BaseAgent):
         prompt = self._build_content_prompt(
             user_message=user_message,
             buyer_persona=context['buyer_persona'],
-            relevant_docs=context['relevant_docs']
+            relevant_docs=context['relevant_docs'],
+            document_summaries=context.get("document_summaries", []),
         )
 
         # 4. Generate content ideas
@@ -86,7 +87,8 @@ class ContentGeneratorAgent(BaseAgent):
         self,
         user_message: str,
         buyer_persona: dict,
-        relevant_docs: list[dict]
+        relevant_docs: list[dict],
+        document_summaries: list[dict],
     ) -> str:
         """
         Build prompt for content generation.
@@ -105,12 +107,18 @@ class ContentGeneratorAgent(BaseAgent):
         # Format relevant documents (filter transcripts for techniques)
         techniques_text = ""
         user_docs_text = ""
+        summaries_text = ""
 
         for doc in relevant_docs:
             if doc.get('content_type') == 'video_transcript':
                 techniques_text += f"\n\n📹 TÉCNICA DE ANDREA ESTRATEGA ({doc.get('source_title', 'Video')}):\n{doc.get('content', '')}"
             elif doc.get('content_type') == 'user_document':
                 user_docs_text += f"\n\n📄 DOCUMENTO DEL USUARIO ({doc.get('source_title', 'Documento')}):\n{doc.get('content', '')}"
+
+        if document_summaries:
+            summaries_text = "\n\n".join(
+                [f"📄 {d.get('filename','Documento')}: {d.get('summary','')}" for d in document_summaries[:5]]
+            )
 
         if not techniques_text:
             techniques_text = "No hay técnicas específicas disponibles en este momento."
@@ -129,6 +137,9 @@ Eres un experto en marketing digital especializado en crear contenido viral para
 
 ## DOCUMENTOS ADICIONALES DEL USUARIO:
 {user_docs_text if user_docs_text else "No hay documentos adicionales."}
+
+## RESÚMENES PERSISTENTES (Contexto largo de documentos):
+{summaries_text if summaries_text else "No hay resúmenes persistentes aún."}
 
 ## TU TAREA:
 

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { MessageList } from './MessageList'
 import { DocumentUpload } from './DocumentUpload'
+import { AnalysisPanel } from './AnalysisPanel'
 import type { Message } from '@/lib/types'
 import { streamMessage, getMessages } from '@/lib/api-chat'
 
@@ -23,6 +24,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [showAnalysis, setShowAnalysis] = useState(false)
 
   // Load existing messages on mount
   useEffect(() => {
@@ -158,6 +160,23 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
 
   return (
     <div className="flex flex-col h-full bg-white">
+      <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-2">
+        <div className="text-sm font-semibold text-gray-900">Chat</div>
+        <button
+          type="button"
+          onClick={() => setShowAnalysis((v) => !v)}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+        >
+          {showAnalysis ? 'Ocultar análisis' : 'Ver análisis'}
+        </button>
+      </div>
+
+      {showAnalysis ? (
+        <div className="border-b border-gray-200 px-4 py-3 bg-gray-50">
+          <AnalysisPanel chatId={chatId} />
+        </div>
+      ) : null}
+
       {/* Messages area */}
       <MessageList messages={messages} isStreaming={isStreaming} />
 

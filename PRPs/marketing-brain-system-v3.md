@@ -4634,6 +4634,10 @@ Solución: Directiva `'use client'` al inicio de componentes interactivos.
   - python-patterns (automático)
   - clean-code (automático)
 
+**Uso obligatorio de herramientas (en CADA PASO):**
+- **Serena (obligatorio)**: antes de cambiar código, ubicar símbolos/llamadas reales (memoria, routing, endpoints) y confirmar dónde se integra.
+- **Archon (obligatorio)**: antes de decidir el patrón, consultar documentación/patrones actuales (LangChain memory, context-window, retrieval) y documentar “por qué” la decisión.
+
 **⚠️ PROBLEMAS IDENTIFICADOS (Ver `docs/DIAGNOSTICO_MEMORIA_Y_CONTEXTO.md`):**
 
 1. **Memoria de conversación NO se carga**: El agente no recuerda mensajes anteriores
@@ -4650,6 +4654,10 @@ Corregir sistema de memoria, mejorar detección de intenciones, crear visualizac
 #### PASO 1: Cargar Historial de Conversación
 
 **Problema:** `load_chat_history()` existe pero nunca se llama.
+
+**Uso de herramientas (PASO 1):**
+- 🔧 Serena: localizar dónde se instancia `MemoryManager` y dónde se atienden `GET /api/chats/{chat_id}`, `POST /messages`, `POST /stream` para insertar la carga de historial sin romper SSE.
+- ⚡ Archon: validar patrón recomendado para memoria por conversación (por `chat_id`) y ventana \(k\), incluyendo `return_messages`.
 
 **Solución:**
 1. Modificar `GET /api/chats/{chat_id}` para cargar historial al abrir chat
@@ -4669,6 +4677,14 @@ Corregir sistema de memoria, mejorar detección de intenciones, crear visualizac
 #### PASO 2: Mejorar Detección de Solicitudes de Contenido
 
 **Problema:** Keywords muy amplias detectan cualquier mensaje como solicitud de contenido.
+
+**Uso de herramientas (PASO 2):**
+- 🔧 Serena: localizar `_is_content_request` y su uso en `route()` + ejemplos de mensajes que se clasifican mal.
+- ⚡ Archon: consultar patrones de intent detection (reglas + guardrails) y cuándo conviene LLM vs reglas.
+
+**Hallazgos (PASO 2):**
+- **Serena**: `RouterAgent/_is_content_request` usa `any(keyword in message_lower ...)` con keywords demasiado amplias (incluye `"necesito"`), lo que dispara `CONTENT_GENERATION` en mensajes no-petición.
+- **Archon**: para MVP, preferir **reglas estrictas** con guardrails (word boundaries + combinación “verbo de solicitud” + “objeto de contenido”) antes que keywords sueltas; dejar LLM intent-detection como opción posterior si siguen falsos positivos.
 
 **Solución:**
 1. Usar LLM para detectar intención (más preciso)
@@ -4690,6 +4706,14 @@ Corregir sistema de memoria, mejorar detección de intenciones, crear visualizac
 #### PASO 3: Crear Endpoints API para Visualizar Datos
 
 **Problema:** No hay forma de ver buyer persona, foro, puntos de dolor, customer journey.
+
+**Uso de herramientas (PASO 3):**
+- 🔧 Serena: localizar modelos/relaciones (`MarketingBuyerPersona`, `MarketingChat`) y patrones existentes de endpoints/auth.
+- ⚡ Archon: consultar diseño de APIs REST para “read-only views” + autorización por `project_id`.
+
+**Hallazgos (PASO 3):**
+- **Serena**: el backend actualmente incluye routers en `backend/src/main.py` (`auth`, `chat`, `documents`). Los endpoints siguen patrón `APIRouter(prefix="/api/...", tags=[...])` y usan `Depends(get_current_user)` para aislar por `project_id`.
+- **Archon**: para “read-only views” conviene endpoints dedicados por recurso (ej. `/api/chats/{chat_id}/analysis`) y respuestas JSON estables; si una sección aún no existe (forum/pain_points/journey), devolverla vacía pero explícita (sin 404) para que UI pueda mostrar “pendiente”.
 
 **Solución:**
 1. Crear nuevos endpoints:
@@ -4716,6 +4740,10 @@ Corregir sistema de memoria, mejorar detección de intenciones, crear visualizac
 #### PASO 4: Crear Componentes Frontend para Visualización
 
 **Problema:** No hay UI para ver los datos generados.
+
+**Uso de herramientas (PASO 4):**
+- 🔧 Serena: localizar componentes actuales (`ChatInterface`, layout) y dónde insertar “panel de análisis” sin romper SSR/Suspense.
+- ⚡ Archon: revisar patrones UI para estados (loading/error/empty) y manejo de context window (mostrar “resumen” vs “JSON raw”).
 
 **Solución:**
 1. Crear componentes React:
@@ -4752,11 +4780,27 @@ Corregir sistema de memoria, mejorar detección de intenciones, crear visualizac
 
 **Problema:** Documentos solo se consultan vía RAG, no están siempre en contexto.
 
+**Uso de herramientas (PASO 5):**
+- 🔧 Serena: confirmar si existe columna/estructura para “summary” de documentos y dónde se procesa upload.
+- ⚡ Archon: validar patrón “long-term doc summaries + RAG” (resumen persistente + retrieval puntual) y límites de tokens.
+
+**Hallazgos (PASO 5):**
+- **Serena**: `marketing_user_documents` actualmente NO tiene columna `summary` (solo tracking: filename/file_path/chunks_count/processed). Por tanto, “resúmenes persistentes” requieren **migración** (SQL) o alternativa (guardar resumen en `metadata` de KB / tabla nueva).
+- **Archon**: patrón recomendado para “contexto largo de docs” en producción suele ser **resumen persistente + RAG** (no meter todos los docs crudos al prompt). Implica: generar resumen al subir, guardar, e inyectar resúmenes + top-k retrieval en prompts.
+
 **Solución:**
 1. Cuando se sube un documento:
    - Generar resumen/extracto con LLM
    - Guardar resumen en tabla `marketing_user_documents.summary`
    - Mantener embeddings para RAG
+
+**Implementación (PASO 5):**
+- Crear migración: `backend/db/002_add_user_document_summary.sql` (ejecución manual en Supabase).
+- Backend:
+  - `MarketingUserDocument.summary` (nullable) + exponer `summary` en schemas de documentos.
+  - En `POST /api/documents/upload/{chat_id}` generar `summary` (sin bloquear si falla) y persistir.
+  - `MemoryManager.get_context()` incluir `document_summaries` para inyectar en prompts como “contexto largo”.
+  - `ContentGeneratorAgent` incluye `document_summaries` + RAG (top-k) en el prompt.
 
 2. En `MemoryManager.get_context()`:
    - Incluir resúmenes de documentos del chat en contexto largo

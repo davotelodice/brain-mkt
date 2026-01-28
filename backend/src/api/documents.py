@@ -20,6 +20,8 @@ from ..schemas.documents import (
 from ..services.chat_service import ChatService
 from ..services.document_processor import DocumentProcessor
 from ..services.embedding_service import EmbeddingService
+from ..services.llm_service import LLMService
+from ..utils.file_parsers import parse_document
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -83,7 +85,8 @@ async def upload_document(
         file_type=file_ext,
         file_size=file_size,
         file_path="",  # Will update after saving
-        processed=False
+        processed=False,
+        summary=None
     )
     db.add(doc_record)
     await db.flush()
@@ -99,6 +102,29 @@ async def upload_document(
     # Update path in database
     doc_record.file_path = str(file_full_path)
     await db.flush()
+
+    # 4.1 Generate and persist summary (contexto largo)
+    try:
+        text = await parse_document(file_full_path, file_ext)
+        text = (text or "").strip()
+        if text:
+            sample = text[:6000]
+            llm = LLMService()
+            summary = await llm.generate(
+                prompt=(
+                    "Resume este documento en español, en 6-10 viñetas, "
+                    "enfocado a marketing/negocio. Incluye datos, claims, "
+                    "audiencia, objeciones y tono si existen.\n\n"
+                    f"DOCUMENTO:\n{sample}"
+                ),
+                max_tokens=400,
+                temperature=0.2
+            )
+            doc_record.summary = summary.strip() if summary else None
+            await db.flush()
+    except Exception:
+        # No bloquear upload si falla el resumen
+        pass
 
     # 5. Process document asynchronously (in background)
     # TODO: Move to background task in production
@@ -126,6 +152,7 @@ async def upload_document(
         file_type=doc_record.file_type,
         file_size=doc_record.file_size,
         processed=doc_record.processed,
+        summary=doc_record.summary,
         created_at=doc_record.created_at
     )
 
@@ -168,6 +195,7 @@ async def list_documents(
                 file_size=doc.file_size,
                 chunks_count=doc.chunks_count,
                 processed=doc.processed,
+                summary=doc.summary,
                 created_at=doc.created_at
             )
             for doc in documents

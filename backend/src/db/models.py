@@ -116,6 +116,7 @@ class MarketingUserDocument(Base):
     file_type = Column(String(10), CheckConstraint("file_type IN ('.txt', '.pdf', '.docx')"), nullable=False)
     file_size = Column(Integer, nullable=False)
     file_path = Column(String(1000), nullable=False)
+    summary = Column(Text)  # Nullable; requires DB migration 002_add_user_document_summary.sql
     chunks_count = Column(Integer, default=0, nullable=False)
     processed = Column(Boolean, default=False, nullable=False)
     created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)

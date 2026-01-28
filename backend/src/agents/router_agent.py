@@ -274,14 +274,17 @@ class RouterAgent(BaseAgent):
         Returns:
             True if content request detected
         """
-        content_keywords = [
-            'dame', 'genera', 'crea', 'escribe', 'ideas',
-            'posts', 'videos', 'scripts', 'contenido',
-            'publica', 'redacta', 'hazme', 'necesito'
-        ]
+        import re
 
-        message_lower = message.lower()
-        return any(keyword in message_lower for keyword in content_keywords)
+        text = (message or "").strip().lower()
+        if len(text.split()) < 4:
+            return False
+
+        # Require explicit "request verb" + "content object"
+        verbs = r"(dame|genera|crea|escribe|redacta|hazme|prop[oó]n|sugi[eé]reme)"
+        objects = r"(ideas?|contenido|post(s)?|video(s)?|reel(s)?|guion(es)?|script(s)?)"
+
+        return bool(re.search(rf"\b{verbs}\b.*\b{objects}\b", text))
 
     def _has_business_information(
         self,

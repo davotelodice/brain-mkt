@@ -12,6 +12,7 @@ class UploadDocumentResponse(BaseModel):
     file_type: str
     file_size: int
     processed: bool = False
+    summary: str | None = None
     created_at: datetime
 
     class Config:
@@ -26,6 +27,7 @@ class DocumentMetadata(BaseModel):
     file_size: int
     chunks_count: int
     processed: bool
+    summary: str | None = None
     created_at: datetime
 
     class Config:

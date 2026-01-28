@@ -266,8 +266,9 @@ async def stream_message(
         content=request.content
     )
 
-    # 2. Add to short-term memory
-    await memory_manager.add_message_to_short_term("user", request.content)
+    # 2. Ensure chat history loaded + add to short-term memory
+    await memory_manager.ensure_chat_loaded(chat_id=chat_id, project_id=user.project_id, limit=20)
+    await memory_manager.add_message_to_short_term(chat_id, "user", request.content)
 
     async def generate_sse():
         """
@@ -314,7 +315,7 @@ async def stream_message(
                 )
 
                 # Add to short-term memory
-                await memory_manager.add_message_to_short_term("assistant", final_content)
+                await memory_manager.add_message_to_short_term(chat_id, "assistant", final_content)
 
             # Final done signal
             yield "data: [DONE]\n\n"
@@ -373,8 +374,9 @@ async def send_message(
         content=request.content
     )
 
-    # 2. Add to short-term memory
-    await memory_manager.add_message_to_short_term("user", request.content)
+    # 2. Ensure chat history loaded + add to short-term memory
+    await memory_manager.ensure_chat_loaded(chat_id=chat_id, project_id=user.project_id, limit=20)
+    await memory_manager.add_message_to_short_term(chat_id, "user", request.content)
 
     # 3. Router Agent decides which agent to execute
     routing_result = await router_agent.execute(
@@ -469,7 +471,7 @@ async def send_message(
     )
 
     # 6. Add to short-term memory
-    await memory_manager.add_message_to_short_term("assistant", assistant_content)
+    await memory_manager.add_message_to_short_term(chat_id, "assistant", assistant_content)
 
     return Message(
         id=assistant_message.id,

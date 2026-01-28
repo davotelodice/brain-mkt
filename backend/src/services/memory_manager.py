@@ -32,8 +32,14 @@ class MemoryManager:
         self.db = db
         self.rag_service = rag_service
 
-        # Short-term memory: keep last 10 messages
-        self.short_term = ConversationBufferWindowMemory(k=10)
+        # Short-term memory MUST be per chat_id (avoid cross-chat leakage)
+        self._short_term_by_chat: dict[UUID, ConversationBufferWindowMemory] = {}
+        self._loaded_chats: set[UUID] = set()
+
+    def _get_short_term(self, chat_id: UUID) -> ConversationBufferWindowMemory:
+        if chat_id not in self._short_term_by_chat:
+            self._short_term_by_chat[chat_id] = ConversationBufferWindowMemory(k=10)
+        return self._short_term_by_chat[chat_id]
 
     async def get_context(
         self,
@@ -60,14 +66,18 @@ class MemoryManager:
                 "documents_count": int
             }
         """
+        # Ensure short-term memory is loaded for this chat
+        await self.ensure_chat_loaded(chat_id=chat_id, project_id=project_id, limit=20)
+
         # 1. Short-term: Get recent messages from buffer
-        recent_messages = self.short_term.load_memory_variables({})
+        recent_messages = self._get_short_term(chat_id).load_memory_variables({})
 
         # 2. Long-term: Get buyer persona
         buyer_persona = await self._get_buyer_persona(chat_id, project_id)
 
         # 3. Long-term: Count documents uploaded to this chat
         documents_count = await self._count_user_documents(chat_id, project_id)
+        document_summaries = await self._get_document_summaries(chat_id, project_id)
 
         # 4. Semantic: Get relevant documents via RAG
         relevant_docs = []
@@ -84,11 +94,13 @@ class MemoryManager:
             "buyer_persona": buyer_persona,
             "relevant_docs": relevant_docs,
             "has_buyer_persona": buyer_persona is not None,
-            "documents_count": documents_count
+            "documents_count": documents_count,
+            "document_summaries": document_summaries,
         }
 
     async def add_message_to_short_term(
         self,
+        chat_id: UUID,
         role: str,
         content: str
     ) -> None:
@@ -99,10 +111,11 @@ class MemoryManager:
             role: Message role (user | assistant)
             content: Message content
         """
+        mem = self._get_short_term(chat_id)
         if role == "user":
-            self.short_term.chat_memory.add_user_message(content)
+            mem.chat_memory.add_user_message(content)
         elif role == "assistant":
-            self.short_term.chat_memory.add_ai_message(content)
+            mem.chat_memory.add_ai_message(content)
 
     async def _get_buyer_persona(
         self,
@@ -161,6 +174,30 @@ class MemoryManager:
         docs = result.scalars().all()
         return len(docs)
 
+    async def _get_document_summaries(self, chat_id: UUID, project_id: UUID) -> list[dict]:
+        """
+        Get persisted summaries for uploaded documents in this chat.
+
+        Returns:
+            [{ "document_id": "...", "filename": "...", "summary": "..." }, ...]
+        """
+        from ..db.models import MarketingUserDocument
+
+        result = await self.db.execute(
+            select(MarketingUserDocument).where(
+                MarketingUserDocument.chat_id == chat_id,
+                MarketingUserDocument.project_id == project_id,
+            )
+        )
+        docs = result.scalars().all()
+        out: list[dict] = []
+        for d in docs:
+            if getattr(d, "summary", None):
+                out.append(
+                    {"document_id": str(d.id), "filename": d.filename, "summary": d.summary}
+                )
+        return out
+
     async def load_chat_history(
         self,
         chat_id: UUID,
@@ -177,6 +214,9 @@ class MemoryManager:
             project_id: Project ID for validation
             limit: Number of recent messages to load (default: 10)
         """
+        # Reset memory for this chat before loading
+        self._short_term_by_chat[chat_id] = ConversationBufferWindowMemory(k=10)
+
         # Get last N messages from database
         result = await self.db.execute(
             select(MarketingMessage)
@@ -193,6 +233,14 @@ class MemoryManager:
         # Add to short-term memory (reverse order: oldest first)
         for message in reversed(messages):
             await self.add_message_to_short_term(
+                chat_id=chat_id,
                 role=message.role,
                 content=message.content
             )
+
+        self._loaded_chats.add(chat_id)
+
+    async def ensure_chat_loaded(self, chat_id: UUID, project_id: UUID, limit: int = 20) -> None:
+        if chat_id in self._loaded_chats:
+            return
+        await self.load_chat_history(chat_id=chat_id, project_id=project_id, limit=limit)
