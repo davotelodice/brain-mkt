@@ -50,6 +50,33 @@ export function AnalysisPanel({ chatId }: { chatId: string }) {
           {JSON.stringify(data.buyer_persona?.full_analysis ?? {}, null, 2)}
         </pre>
       </details>
+
+      {data.has_forum_simulation && (
+        <details className="rounded-lg border border-neutral-800 bg-neutral-950/60 p-2">
+          <summary className="cursor-pointer text-sm text-neutral-200">Ver foro (JSON)</summary>
+          <pre className="mt-2 max-h-64 overflow-auto text-xs text-neutral-200">
+            {JSON.stringify(data.buyer_persona?.forum_simulation ?? {}, null, 2)}
+          </pre>
+        </details>
+      )}
+
+      {data.has_pain_points && (
+        <details className="rounded-lg border border-neutral-800 bg-neutral-950/60 p-2">
+          <summary className="cursor-pointer text-sm text-neutral-200">Ver puntos de dolor (JSON)</summary>
+          <pre className="mt-2 max-h-64 overflow-auto text-xs text-neutral-200">
+            {JSON.stringify(data.buyer_persona?.pain_points ?? {}, null, 2)}
+          </pre>
+        </details>
+      )}
+
+      {data.has_customer_journey && (
+        <details className="rounded-lg border border-neutral-800 bg-neutral-950/60 p-2">
+          <summary className="cursor-pointer text-sm text-neutral-200">Ver customer journey (JSON)</summary>
+          <pre className="mt-2 max-h-64 overflow-auto text-xs text-neutral-200">
+            {JSON.stringify(data.buyer_persona?.customer_journey ?? {}, null, 2)}
+          </pre>
+        </details>
+      )}
     </div>
   )
 }

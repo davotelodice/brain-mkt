@@ -45,10 +45,10 @@ class MemoryManager:
         self,
         chat_id: UUID,
         project_id: UUID,
-        current_message: str | None = None
+        current_message: str | None = None,
     ) -> dict:
         """
-        Get complete context combining all three memory types.
+        Get complete context combining all memory types (short, long, semantic).
 
         Args:
             chat_id: Chat ID
@@ -58,12 +58,15 @@ class MemoryManager:
         Returns:
             Combined context dictionary:
             {
-                "recent_chat": [...],  # Last 10 messages
-                "buyer_persona": {...},  # Buyer persona if exists
-                "customer_journey": {...},  # Customer journey if exists
-                "relevant_docs": [...],  # Semantic search results
+                "recent_chat": [...],
+                "buyer_persona": {...} | None,
+                "forum_simulation": {...} | None,
+                "pain_points": {...} | None,
+                "customer_journey": {...} | None,
+                "relevant_docs": [...],
                 "has_buyer_persona": bool,
-                "documents_count": int
+                "documents_count": int,
+                "document_summaries": [...],
             }
         """
         # Ensure short-term memory is loaded for this chat
@@ -72,26 +75,37 @@ class MemoryManager:
         # 1. Short-term: Get recent messages from buffer
         recent_messages = self._get_short_term(chat_id).load_memory_variables({})
 
-        # 2. Long-term: Get buyer persona
-        buyer_persona = await self._get_buyer_persona(chat_id, project_id)
+        # 2. Long-term: Get buyer persona + análisis extendido (foro, pain points, CJ)
+        buyer_persona_row = await self._get_buyer_persona_row(chat_id, project_id)
+        buyer_persona = buyer_persona_row.full_analysis if buyer_persona_row else None
+        forum_simulation = (
+            buyer_persona_row.forum_simulation if buyer_persona_row else None
+        )
+        pain_points = buyer_persona_row.pain_points if buyer_persona_row else None
+        customer_journey = (
+            buyer_persona_row.customer_journey if buyer_persona_row else None
+        )
 
         # 3. Long-term: Count documents uploaded to this chat
         documents_count = await self._count_user_documents(chat_id, project_id)
         document_summaries = await self._get_document_summaries(chat_id, project_id)
 
         # 4. Semantic: Get relevant documents via RAG
-        relevant_docs = []
+        relevant_docs: list[dict] = []
         if current_message:
             relevant_docs = await self.rag_service.search_relevant_docs(
                 query=current_message,
                 project_id=project_id,
                 chat_id=chat_id,
-                limit=5
+                limit=5,
             )
 
         return {
             "recent_chat": recent_messages,
             "buyer_persona": buyer_persona,
+            "forum_simulation": forum_simulation,
+            "pain_points": pain_points,
+            "customer_journey": customer_journey,
             "relevant_docs": relevant_docs,
             "has_buyer_persona": buyer_persona is not None,
             "documents_count": documents_count,
@@ -117,20 +131,20 @@ class MemoryManager:
         elif role == "assistant":
             mem.chat_memory.add_ai_message(content)
 
-    async def _get_buyer_persona(
+    async def _get_buyer_persona_row(
         self,
         chat_id: UUID,
         project_id: UUID
-    ) -> dict | None:
+    ):
         """
-        Get buyer persona for chat if exists.
+        Get MarketingBuyerPersona row for chat if exists.
 
         Args:
             chat_id: Chat ID
             project_id: Project ID for validation
 
         Returns:
-            Buyer persona data or None
+            ORM row or None
         """
         result = await self.db.execute(
             select(MarketingBuyerPersona).where(
@@ -139,13 +153,7 @@ class MemoryManager:
             )
         )
 
-        persona = result.scalar_one_or_none()
-
-        if persona:
-            # Return full_analysis (contains complete buyer persona JSON)
-            return persona.full_analysis if persona.full_analysis else {}
-
-        return None
+        return result.scalar_one_or_none()
 
     async def _count_user_documents(
         self,

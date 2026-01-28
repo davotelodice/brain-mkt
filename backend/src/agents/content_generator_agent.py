@@ -50,12 +50,14 @@ class ContentGeneratorAgent(BaseAgent):
                 "message": "Primero necesito generar tu buyer persona. Por favor, cuéntame sobre tu negocio."
             }
 
-        # 3. Build enhanced prompt with buyer persona + RAG techniques
+        # 3. Build enhanced prompt with buyer persona + análisis extendido
         prompt = self._build_content_prompt(
             user_message=user_message,
             buyer_persona=context['buyer_persona'],
             relevant_docs=context['relevant_docs'],
             document_summaries=context.get("document_summaries", []),
+            pain_points=context.get("pain_points"),
+            customer_journey=context.get("customer_journey"),
         )
 
         # 4. Generate content ideas
@@ -89,6 +91,8 @@ class ContentGeneratorAgent(BaseAgent):
         buyer_persona: dict,
         relevant_docs: list[dict],
         document_summaries: list[dict],
+        pain_points: dict | None,
+        customer_journey: dict | None,
     ) -> str:
         """
         Build prompt for content generation.
@@ -108,6 +112,8 @@ class ContentGeneratorAgent(BaseAgent):
         techniques_text = ""
         user_docs_text = ""
         summaries_text = ""
+        pain_points_text = ""
+        cj_text = ""
 
         for doc in relevant_docs:
             if doc.get('content_type') == 'video_transcript':
@@ -120,6 +126,39 @@ class ContentGeneratorAgent(BaseAgent):
                 [f"📄 {d.get('filename','Documento')}: {d.get('summary','')}" for d in document_summaries[:5]]
             )
 
+        if pain_points:
+            items = []
+            if isinstance(pain_points, dict):
+                raw_items = pain_points.get("items", [])
+                if isinstance(raw_items, list):
+                    items = raw_items
+            elif isinstance(pain_points, list):
+                items = pain_points
+            if items:
+                pain_points_text = "\n".join(f"- {p}" for p in items)
+
+        if customer_journey and isinstance(customer_journey, dict):
+            parts: list[str] = []
+            for phase_key, phase_label in [
+                ("awareness", "Conciencia"),
+                ("consideration", "Consideración"),
+                ("purchase", "Compra"),
+            ]:
+                phase = customer_journey.get(phase_key) or {}
+                if isinstance(phase, dict):
+                    busquedas = phase.get("busquedas") or []
+                    preguntas = phase.get("preguntas_cabeza") or []
+                    if busquedas or preguntas:
+                        parts.append(f"### Fase {phase_label}")
+                        if busquedas:
+                            parts.append("  - Búsquedas típicas:")
+                            parts.extend([f"    * {b}" for b in busquedas])
+                        if preguntas:
+                            parts.append("  - Preguntas en su cabeza:")
+                            parts.extend([f"    * {q}" for q in preguntas])
+            if parts:
+                cj_text = "\n".join(parts)
+
         if not techniques_text:
             techniques_text = "No hay técnicas específicas disponibles en este momento."
 
@@ -131,6 +170,12 @@ Eres un experto en marketing digital especializado en crear contenido viral para
 
 ## BUYER PERSONA DEL CLIENTE:
 {persona_text}
+
+## PUNTOS DE DOLOR PRINCIPALES:
+{pain_points_text if pain_points_text else "No hay puntos de dolor persistidos todavía."}
+
+## CUSTOMER JOURNEY (fases y preguntas):
+{cj_text if cj_text else "Aún no se ha generado un customer journey detallado."}
 
 ## TÉCNICAS DE CONTENIDO VIRAL (de Andrea Estratega):
 {techniques_text}

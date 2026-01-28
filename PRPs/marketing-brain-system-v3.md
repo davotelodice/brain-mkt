@@ -4822,6 +4822,85 @@ Corregir sistema de memoria, mejorar detección de intenciones, crear visualizac
 
 ---
 
+### TAREA 8.2: Buyer Persona Extendido (Plantilla + Foro + Customer Journey)
+
+**Herramientas a utilizar:**
+- 🔧 MCP Serena: localizar y editar `backend/src/agents/buyer_persona_agent.py`
+- ⚡ MCP Archon: revisar patrones de prompts largos y respuestas JSON robustas
+- 📚 Skills:
+  - **conversation-memory**, **agent-memory-systems**
+  - **python-patterns**, **clean-code**
+
+**Objetivo:**
+Completar el análisis del buyer persona generando automáticamente:
+- `full_analysis` basado en la plantilla completa `contenido/buyer-plantilla.md`
+- `forum_simulation` con posts de foro y soluciones deseadas
+- `pain_points` con 10 puntos de dolor claros
+- `customer_journey` con 3 fases (awareness, consideration, purchase) y listas de búsquedas/preguntas.
+
+**Pasos a seguir:**
+
+1. **Usar plantilla completa desde disco**
+   - Leer `contenido/buyer-plantilla.md` desde el backend (ruta relativa al root del proyecto).
+   - Actualizar `_build_buyer_persona_prompt()` de `BuyerPersonaAgent` para:
+     - Inyectar el contenido completo del markdown en el prompt.
+     - Indicar explícitamente que debe usar solo las PREGUNTAS como guía y **no** copiar las respuestas de ejemplo (caso Ana).
+     - Exigir salida en **JSON válido**, estructurado por secciones (títulos de la plantilla como claves de primer nivel).
+
+2. **Generar foro + puntos de dolor automáticamente**
+   - Añadir método interno `BuyerPersonaAgent._generate_forum_and_pain_points(buyer_persona_data)`.
+   - Basarse en el prompt de foro definido en `contenido/promts_borradores.md` (sección “Promt para simulacion en foro de buyer persona”).
+   - El LLM debe devolver JSON con estructura:
+     ```json
+     {
+       "posts": [{ "queja": "...", "solucion_deseada": "..." }],
+       "pain_points": { "items": ["Punto 1", "...", "Punto 10"] }
+     }
+     ```
+   - Guardar:
+     - `forum_simulation = { "posts": [...] }`
+     - `pain_points = { "items": [...] }`
+
+3. **Generar customer journey (CJ) automáticamente**
+   - Añadir método interno `BuyerPersonaAgent._generate_customer_journey(buyer_persona_data, forum_simulation, pain_points)`.
+   - Basarse en el prompt “Prompt costumer journey” de `contenido/promts_borradores.md`.
+   - El LLM debe devolver JSON con estructura:
+     ```json
+     {
+       "awareness": { "busquedas": [...], "preguntas_cabeza": [...] },
+       "consideration": { "busquedas": [...], "preguntas_cabeza": [...] },
+       "purchase": { "busquedas": [...], "preguntas_cabeza": [...] }
+     }
+     ```
+   - Guardar el resultado en `customer_journey`.
+
+4. **Integración en el flujo actual**
+   - Dentro de `BuyerPersonaAgent.execute()`:
+     - Después de generar y persistir `full_analysis`, llamar secuencialmente a:
+       - `_generate_forum_and_pain_points(...)`
+       - `_generate_customer_journey(...)`
+     - Actualizar el registro de `MarketingBuyerPersona` recién creado con:
+       - `forum_simulation`, `pain_points`, `customer_journey`
+       - `await db.commit()` al final de la secuencia.
+   - No modificar:
+     - `RouterAgent`
+     - `MemoryManager`
+     - endpoints existentes de análisis (`/api/chats/{chat_id}/analysis`, `/buyer-persona`).
+
+**Archivos a modificar:**
+- `backend/src/agents/buyer_persona_agent.py`
+
+**Criterios de aceptación:**
+- [ ] Primer buyer persona generado para un chat rellena:
+  - `full_analysis`
+  - `forum_simulation.posts` (≥1 post con `queja` + `solucion_deseada`)
+  - `pain_points.items` (exactamente 10 ítems)
+  - `customer_journey.awareness/consideration/purchase` con ≥10 `busquedas` y ≥10 `preguntas_cabeza` cada una.
+- [ ] `GET /api/chats/{chat_id}/analysis` refleja `has_forum_simulation=true`, `has_pain_points=true`, `has_customer_journey=true` tras el primer análisis.
+- [ ] El panel de análisis actual muestra la nueva información sin romper el flujo de TAREA 8.1.
+
+---
+
 #### PASO 6: Implementar Agentes Faltantes (Opcional - Futuro)
 
 **Nota:** Estos agentes están fuera del scope de TAREA 8.1, pero se documentan para futuro.

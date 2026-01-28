@@ -516,7 +516,7 @@ OPENROUTER_MODEL=anthropic/claude-3.5-sonnet
 #### Error 7: Test `BuyerPersonaAgent.execute` Fallaba - **✅ RESUELTO**
 - **Error:** `'persona_data' is an invalid keyword argument for MarketingBuyerPersona`
 - **Causa:** Modelo requiere columnas específicas (`initial_questions`, `full_analysis`, etc.)
-- **Solución:** Guardado buyer persona completo en `full_analysis`, otras columnas vacías
+- **Solución:** Se guarda el buyer persona completo en `full_analysis`. A partir de **TAREA 8.2** además se generan y persisten automáticamente `forum_simulation`, `pain_points` y `customer_journey` en el mismo modelo.
 - **Archivo:** `backend/src/agents/buyer_persona_agent.py`
 
 #### Error 8: Test de Memoria Window Limit - **✅ RESUELTO**

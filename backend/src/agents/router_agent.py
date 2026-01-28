@@ -266,25 +266,31 @@ class RouterAgent(BaseAgent):
         """
         Detect if user is requesting content generation.
 
-        Keywords: dame, genera, crea, escribe, ideas, posts, videos, scripts
-
-        Args:
-            message: User message
-
-        Returns:
-            True if content request detected
+        Incluye:
+        - Solicitudes iniciales ("dame ideas de contenido", "genera posts", etc.)
+        - Solicitudes de profundizar en ideas ya generadas ("desarrolla la 2 y la 3", "detalla esas ideas")
         """
         import re
 
         text = (message or "").strip().lower()
-        if len(text.split()) < 4:
+        if len(text.split()) < 3:
             return False
 
-        # Require explicit "request verb" + "content object"
+        # Regla 1: verbo de solicitud + objeto de contenido (solicitud inicial)
         verbs = r"(dame|genera|crea|escribe|redacta|hazme|prop[oó]n|sugi[eé]reme)"
         objects = r"(ideas?|contenido|post(s)?|video(s)?|reel(s)?|guion(es)?|script(s)?)"
+        if re.search(rf"\b{verbs}\b.*\b{objects}\b", text):
+            return True
 
-        return bool(re.search(rf"\b{verbs}\b.*\b{objects}\b", text))
+        # Regla 2: profundizar / desarrollar ideas ya propuestas
+        refine_verbs = r"(desarrolla(me)?|detalla|profundiza|expande|contin[uú]a)"
+        # Referencias típicas a ideas anteriores: "idea 2", "la 2 y la 3", "esas ideas"
+        refine_objects = r"(idea(s)?|la\s+\d+|las\s+\d+|\d+\s+y\s+\d+|opci[oó]n(es)?|esas\s+ideas)"
+
+        if re.search(rf"\b{refine_verbs}\b", text) and re.search(rf"\b{refine_objects}\b", text):
+            return True
+
+        return False
 
     def _has_business_information(
         self,
