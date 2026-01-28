@@ -277,6 +277,10 @@ class RouterAgent(BaseAgent):
                             estructura = idea.get("estructura", "")
                             cta = idea.get("cta", "")
                             guion = idea.get("guion", "") or idea.get("dialogo", "")
+                            tecnicas = idea.get("tecnicas_aplicadas", [])
+                            tecnicas_text = ""
+                            if isinstance(tecnicas, list) and len(tecnicas) > 0:
+                                tecnicas_text = f"\n🔧 **Técnicas aplicadas:** {', '.join(tecnicas)}\n"
 
                             content_text += f"**{i}. {titulo}** ({plataforma})\n"
                             if hook:
@@ -285,6 +289,8 @@ class RouterAgent(BaseAgent):
                                 content_text += f"📋 Estructura: {estructura}\n"
                             if cta:
                                 content_text += f"📢 CTA: {cta}\n"
+                            if tecnicas_text:
+                                content_text += tecnicas_text
                             if guion:
                                 content_text += f"🗣️ Guion/Diálogo:\n{guion}\n"
                             content_text += "\n"

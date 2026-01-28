@@ -139,11 +139,12 @@ class ContentGeneratorAgent(BaseAgent):
 
             content_ideas: list[dict[str, Any]] = []
             content_text: str = ""
+            tecnicas_aplicadas_count: int = 0
 
             if mode == "ideas_json":
-                # 7. Parse response (JSON ideas)
-                content_ideas = cast(list[dict[str, Any]], self._parse_content_response(response))
-                logger.info(f"Parsed {len(content_ideas)} content ideas")
+                # 7. Parse response (JSON ideas) and extract tecnicas_aplicadas
+                content_ideas, tecnicas_aplicadas_count = self._parse_content_response(response)
+                logger.info(f"Parsed {len(content_ideas)} content ideas with {tecnicas_aplicadas_count} técnicas aplicadas")
             else:
                 # 7. Consultivo: texto libre (mantener conversación, auditoría, estrategia, etc.)
                 content_text = (response or "").strip()
@@ -168,19 +169,29 @@ class ContentGeneratorAgent(BaseAgent):
                     t = (d.get("content_type") or "unknown") if isinstance(d, dict) else "unknown"
                     counts[t] = counts.get(t, 0) + 1
 
+                # Health check flags (prueba de vida)
+                history_chars = len(history_text or "")
+                rag_relevant_docs_total = len(relevant_docs)
+                training_summary_chars = prompt_debug.get("training_summary_chars", 0) or 0
+
                 debug = {
                     "stage": "content_generation",
                     "mode": mode,
                     "requested_numbers": requested_numbers,
-                    "history_chars": len(history_text or ""),
+                    "history_chars": history_chars,
                     "messages_count": len(messages),
                     "estimated_input_tokens": int(estimated_input_tokens),
                     "max_tokens": int(max_tokens),
                     "system_prompt_chars": len(system_prompt or ""),
                     "system_prompt_sha": hashlib.sha256((system_prompt or "").encode("utf-8")).hexdigest()[:12],
-                    "rag_relevant_docs_total": len(relevant_docs),
+                    "rag_relevant_docs_total": rag_relevant_docs_total,
                     "rag_relevant_docs_by_type": counts,
                     "document_summaries_count": len(context.get("document_summaries", []) or []),
+                    "tecnicas_aplicadas_count": tecnicas_aplicadas_count,
+                    # Health check flags (prueba de vida automática)
+                    "has_history": history_chars > 0,
+                    "rag_used": rag_relevant_docs_total > 0,
+                    "training_injected": training_summary_chars > 0,
                     **prompt_debug,
                 }
 
@@ -400,7 +411,8 @@ Estructura requerida:
       "estructura": "Desarrollo del contenido",
       "cta": "Call-to-action específico",
       "por_que_funciona": "Conexión técnica + buyer persona + pain point",
-      "guion": "(Opcional) Diálogo/texto completo"
+      "guion": "(Opcional) Diálogo/texto completo",
+      "tecnicas_aplicadas": ["nombre_tecnica_1", "nombre_tecnica_2", ...]
     }
   ]
 }
@@ -409,6 +421,9 @@ REGLAS:
 - mínimo 5 ideas
 - SOLO JSON
 - nada de texto extra
+- OBLIGATORIO: cada idea DEBE incluir "tecnicas_aplicadas" como array de strings
+- Las técnicas deben ser específicas y extraídas del entrenamiento (ej: "contraste", "metáfora_visual", "CTA_específico", "hook_emocional", "storytelling", etc.)
+- Si el usuario pide técnicas específicas, DEBES usarlas y reportarlas en tecnicas_aplicadas
 
 RESPONDE AHORA CON EL JSON:"""
             if mode == "ideas_json"
@@ -453,15 +468,15 @@ Si el usuario pide desarrollar una idea, entrega guion completo + caption + reco
 
         return system_prompt, prompt_debug
 
-    def _parse_content_response(self, response: str) -> list[dict]:
+    def _parse_content_response(self, response: str) -> tuple[list[dict], int]:
         """
-        Parse LLM response (JSON or markdown).
+        Parse LLM response (JSON or markdown) and extract tecnicas_aplicadas.
 
         Args:
             response: LLM response
 
         Returns:
-            List of content ideas
+            Tuple of (list of content ideas, total tecnicas_aplicadas_count)
         """
         # Clean response
         response_clean = response.strip()
@@ -480,18 +495,44 @@ Si el usuario pide desarrollar una idea, entrega guion completo + caption + reco
             data = json.loads(response_clean)
 
             # Extract ideas array
+            ideas: list[dict[str, Any]] = []
             if isinstance(data, dict) and "ideas" in data:
-                ideas = data["ideas"]
-                if isinstance(ideas, list) and len(ideas) > 0:
-                    return cast(list[dict[str, Any]], ideas)
-                logger.warning(f"No ideas found in JSON response: {data}")
-                return [{"titulo": "Idea generada", "contenido": response_clean}]
+                ideas_raw = data["ideas"]
+                if isinstance(ideas_raw, list) and len(ideas_raw) > 0:
+                    ideas = cast(list[dict[str, Any]], ideas_raw)
+                else:
+                    logger.warning(f"No ideas found in JSON response: {data}")
+                    return ([{"titulo": "Idea generada", "contenido": response_clean}], 0)
             elif isinstance(data, list) and len(data) > 0:
-                return cast(list[dict[str, Any]], data)
+                ideas = cast(list[dict[str, Any]], data)
             else:
                 # Fallback: return as single idea
                 logger.warning(f"Unexpected JSON structure: {type(data)}")
-                return [{"titulo": "Idea generada", "contenido": response_clean}]
+                return ([{"titulo": "Idea generada", "contenido": response_clean}], 0)
+
+            # Validate and count tecnicas_aplicadas
+            total_tecnicas = 0
+            unique_tecnicas: set[str] = set()
+            for idx, idea in enumerate(ideas):
+                if not isinstance(idea, dict):
+                    continue
+                tecnicas = idea.get("tecnicas_aplicadas")
+                if tecnicas is None:
+                    logger.warning(f"Idea {idx + 1} missing 'tecnicas_aplicadas' field")
+                    # Set empty array if missing (don't fail, but log)
+                    idea["tecnicas_aplicadas"] = []
+                elif isinstance(tecnicas, list):
+                    # Normalize: ensure all items are strings
+                    tecnicas_clean = [str(t).strip().lower() for t in tecnicas if t]
+                    idea["tecnicas_aplicadas"] = tecnicas_clean
+                    total_tecnicas += len(tecnicas_clean)
+                    unique_tecnicas.update(tecnicas_clean)
+                else:
+                    logger.warning(f"Idea {idx + 1} has invalid 'tecnicas_aplicadas' type: {type(tecnicas)}")
+                    idea["tecnicas_aplicadas"] = []
+
+            logger.info(f"Parsed {len(ideas)} ideas with {total_tecnicas} total técnicas ({len(unique_tecnicas)} unique)")
+            return (ideas, total_tecnicas)
         except json.JSONDecodeError as e:
             # If not JSON, try to extract JSON from markdown or partial JSON
             logger.warning(f"JSON decode error: {e}")
@@ -506,7 +547,17 @@ Si el usuario pide desarrollar una idea, entrega guion completo + caption + reco
                         json_block = response_clean[json_start:json_end].strip()
                         data = json.loads(json_block)
                         if isinstance(data, dict) and "ideas" in data:
-                            return cast(list[dict[str, Any]], data["ideas"])
+                            ideas_fallback = cast(list[dict[str, Any]], data["ideas"])
+                            # Validate tecnicas_aplicadas
+                            total_tecnicas = 0
+                            for idea in ideas_fallback:
+                                if isinstance(idea, dict):
+                                    tecnicas = idea.get("tecnicas_aplicadas", [])
+                                    if isinstance(tecnicas, list):
+                                        total_tecnicas += len([t for t in tecnicas if t])
+                                    else:
+                                        idea["tecnicas_aplicadas"] = []
+                            return (ideas_fallback, total_tecnicas)
                     except (json.JSONDecodeError, KeyError):
                         pass
 
@@ -519,10 +570,20 @@ Si el usuario pide desarrollar una idea, entrega guion completo + caption + reco
                         json_block = response_clean[start_idx:end_idx + 1]
                         data = json.loads(json_block)
                         if isinstance(data, dict) and "ideas" in data:
-                            return cast(list[dict[str, Any]], data["ideas"])
+                            ideas_fallback = cast(list[dict[str, Any]], data["ideas"])
+                            # Validate tecnicas_aplicadas
+                            total_tecnicas = 0
+                            for idea in ideas_fallback:
+                                if isinstance(idea, dict):
+                                    tecnicas = idea.get("tecnicas_aplicadas", [])
+                                    if isinstance(tecnicas, list):
+                                        total_tecnicas += len([t for t in tecnicas if t])
+                                    else:
+                                        idea["tecnicas_aplicadas"] = []
+                            return (ideas_fallback, total_tecnicas)
                     except json.JSONDecodeError:
                         pass
 
             # Final fallback: return as markdown text
             logger.error("Could not parse response as JSON. Returning raw content.")
-            return [{"titulo": "Ideas de contenido", "contenido": response_clean}]
+            return ([{"titulo": "Ideas de contenido", "contenido": response_clean, "tecnicas_aplicadas": []}], 0)

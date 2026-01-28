@@ -26,7 +26,8 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [showAnalysis, setShowAnalysis] = useState(false)
   const [showTrace, setShowTrace] = useState(false)
-  const [traceEvents, setTraceEvents] = useState<unknown[]>([])
+  const [traceRuns, setTraceRuns] = useState<Array<{ startedAt: string; userMessage: string; events: unknown[] }>>([])
+  const [selectedTraceRunIndex, setSelectedTraceRunIndex] = useState<number | null>(null)
 
   // Load existing messages on mount
   useEffect(() => {
@@ -55,7 +56,18 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
     const userMessage = input.trim()
     setInput('')
     setError(null)
-    setTraceEvents([])
+    
+    // Create new trace run for this message
+    const newRun = {
+      startedAt: new Date().toISOString(),
+      userMessage,
+      events: [] as unknown[]
+    }
+    setTraceRuns((prev) => {
+      const updated = [...prev, newRun]
+      setSelectedTraceRunIndex(updated.length - 1) // Select the new run
+      return updated
+    })
 
     // ✅ Optimistic update: Add user message immediately
     const tempUserMessage: Message = {
@@ -93,7 +105,17 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
         }
 
         if (chunk.type === 'debug') {
-          setTraceEvents((prev) => [...prev, chunk.content])
+          // Push debug event to the active (last) run
+          setTraceRuns((prev) => {
+            if (prev.length === 0) return prev
+            const updated = [...prev]
+            const lastIndex = updated.length - 1
+            updated[lastIndex] = {
+              ...updated[lastIndex],
+              events: [...updated[lastIndex].events, chunk.content]
+            }
+            return updated
+          })
           continue
         }
 
@@ -191,12 +213,50 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
       {showTrace ? (
         <div className="border-b border-gray-200 px-4 py-3 bg-gray-50">
           <div className="text-xs font-semibold text-gray-700 mb-2">Trace (SSE debug)</div>
-          {traceEvents.length === 0 ? (
-            <div className="text-xs text-gray-500">Sin eventos aún (activa `SSE_DEBUG=1` en backend).</div>
+          {traceRuns.length === 0 ? (
+            <div className="text-xs text-gray-500">Sin ejecuciones aún (activa `SSE_DEBUG=1` en backend).</div>
           ) : (
-            <pre className="text-[11px] leading-snug whitespace-pre-wrap break-words bg-white border border-gray-200 rounded p-3 max-h-64 overflow-auto">
-              {JSON.stringify(traceEvents, null, 2)}
-            </pre>
+            <div className="space-y-3">
+              {/* Runs list */}
+              <div className="flex gap-2 flex-wrap">
+                {traceRuns.map((run, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setSelectedTraceRunIndex(index)}
+                    className={`px-2 py-1 text-xs rounded border transition ${
+                      selectedTraceRunIndex === index
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                    }`}
+                    title={run.userMessage}
+                  >
+                    #{index + 1} {new Date(run.startedAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </button>
+                ))}
+              </div>
+              
+              {/* Selected run details */}
+              {selectedTraceRunIndex !== null && traceRuns[selectedTraceRunIndex] && (
+                <div className="space-y-2">
+                  <div className="text-xs text-gray-600">
+                    <strong>Mensaje:</strong> {traceRuns[selectedTraceRunIndex].userMessage}
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    <strong>Inicio:</strong> {new Date(traceRuns[selectedTraceRunIndex].startedAt).toLocaleString('es-ES')}
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    <strong>Eventos:</strong> {traceRuns[selectedTraceRunIndex].events.length}
+                  </div>
+                  {traceRuns[selectedTraceRunIndex].events.length === 0 ? (
+                    <div className="text-xs text-gray-500 italic">Sin eventos de debug aún.</div>
+                  ) : (
+                    <pre className="text-[11px] leading-snug whitespace-pre-wrap break-words bg-white border border-gray-200 rounded p-3 max-h-96 overflow-auto">
+                      {JSON.stringify(traceRuns[selectedTraceRunIndex].events, null, 2)}
+                    </pre>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
       ) : null}
