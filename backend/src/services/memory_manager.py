@@ -109,6 +109,21 @@ class MemoryManager:
                 limit=5,
             )
 
+        # 5. TAREA 5: Get learned concepts from books via RAG
+        # PATRÓN: Similar to how we get relevant_docs above
+        learned_concepts: list[dict] = []
+        if current_message:
+            try:
+                learned_concepts = await self.rag_service.search_learned_concepts(
+                    query=current_message,
+                    project_id=project_id,
+                    limit=3,  # Keep it focused
+                    similarity_threshold=0.65
+                )
+            except Exception as e:
+                # Don't fail if search_learned_concepts fails
+                logger.warning("[MEMORY] search_learned_concepts failed: %s", str(e))
+
         return {
             "recent_chat": recent_messages,
             "buyer_persona": buyer_persona,
@@ -119,6 +134,8 @@ class MemoryManager:
             "has_buyer_persona": buyer_persona is not None,
             "documents_count": documents_count,
             "document_summaries": document_summaries,
+            # TAREA 5: Add learned concepts from books
+            "learned_concepts": learned_concepts,
         }
 
     async def add_message_to_short_term(

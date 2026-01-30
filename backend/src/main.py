@@ -6,7 +6,7 @@ import time
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import analysis, auth, chat, documents
+from .api import analysis, auth, chat, documents, knowledge
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -79,6 +79,7 @@ app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(analysis.router)
 app.include_router(documents.router)
+app.include_router(knowledge.router)
 
 
 @app.get("/")

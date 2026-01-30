@@ -376,6 +376,27 @@ class ContentGeneratorAgent(BaseAgent):
         if not user_docs_text:
             user_docs_text = "No hay documentos adicionales."
 
+        # 7. TAREA 5: Format learned concepts from books
+        learned_concepts = context.get("learned_concepts", [])
+        learned_concepts_text = ""
+        if learned_concepts:
+            for concept in learned_concepts[:3]:  # Limit to top 3
+                book_title = concept.get('book_title', 'Libro')
+                main_concepts = concept.get('main_concepts', [])
+                condensed = concept.get('condensed_text', '')[:400]
+                terms = concept.get('technical_terms', {})
+                
+                learned_concepts_text += f"\n\n📚 DE '{book_title}':"
+                if main_concepts:
+                    learned_concepts_text += f"\n  Conceptos: {', '.join(main_concepts[:5])}"
+                if condensed:
+                    learned_concepts_text += f"\n  Resumen: {condensed}"
+                if terms:
+                    terms_str = "; ".join(f"{k}: {v}" for k, v in list(terms.items())[:3])
+                    learned_concepts_text += f"\n  Términos: {terms_str}"
+        else:
+            learned_concepts_text = "No hay conocimiento de libros procesados aún."
+
         # --- Prompt base (consultivo) ---
         base_consultivo = """## TU ROL Y CAPACIDADES:
 
@@ -452,6 +473,9 @@ Si el usuario pide desarrollar una idea, entrega guion completo + caption + reco
 
 ## RESÚMENES PERSISTENTES (Contexto largo de documentos):
 {summaries_text}
+
+## CONOCIMIENTO APRENDIDO DE LIBROS (conceptos extraídos):
+{learned_concepts_text}
 
 ## TU ESTILO Y ENFOQUE:
 

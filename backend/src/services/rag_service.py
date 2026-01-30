@@ -350,3 +350,147 @@ Ranking (most relevant first):"""
             }
             for row in rows
         ]
+
+    # =========================================================================
+    # TAREA 4: Métodos para Book Learning System
+    # CRÍTICO: Estos métodos son NUEVOS, no modifican los existentes
+    # =========================================================================
+
+    async def search_learned_concepts(
+        self,
+        query: str,
+        project_id: UUID,
+        limit: int = 5,
+        similarity_threshold: float = 0.7
+    ) -> list[dict]:
+        """
+        Search in extracted concepts from learned books.
+
+        Uses pgvector cosine similarity on MarketingBookConcept table.
+        CRÍTICO: This method is NEW, does not modify existing methods.
+
+        Args:
+            query: Search query
+            project_id: Project ID for isolation
+            limit: Max results
+            similarity_threshold: Min similarity (0-1)
+
+        Returns:
+            List of concept results with similarity scores
+        """
+        # 1. Generate embedding for query
+        query_embedding = await self.embedding_service.generate_embedding(query)
+        embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
+
+        # 2. Search in book concepts (joined with learned_books for project filter)
+        # PATRÓN: Same as _vector_search but on different table
+        sql = text("""
+            SELECT
+                c.id,
+                c.chunk_index,
+                c.main_concepts,
+                c.condensed_text,
+                c.technical_terms,
+                b.title as book_title,
+                b.author as book_author,
+                1 - (c.embedding <=> CAST(:query_embedding AS vector)) as similarity
+            FROM marketing_book_concepts c
+            JOIN marketing_learned_books b ON c.learned_book_id = b.id
+            WHERE b.project_id = :project_id
+              AND b.processing_status = 'completed'
+              AND 1 - (c.embedding <=> CAST(:query_embedding AS vector)) >= :threshold
+            ORDER BY c.embedding <=> CAST(:query_embedding AS vector)
+            LIMIT :limit
+        """)
+
+        result = await self.db.execute(
+            sql,
+            {
+                "query_embedding": embedding_str,
+                "project_id": str(project_id),
+                "threshold": similarity_threshold,
+                "limit": limit
+            }
+        )
+
+        rows = result.fetchall()
+
+        logger.info(
+            "[RAG] search_learned_concepts query=%s results=%s",
+            query[:50], len(rows)
+        )
+
+        return [
+            {
+                "id": str(row.id),
+                "book_title": row.book_title,
+                "book_author": row.book_author,
+                "chunk_index": row.chunk_index,
+                "main_concepts": row.main_concepts or [],
+                "condensed_text": row.condensed_text or "",
+                "technical_terms": dict(row.technical_terms) if row.technical_terms else {},
+                "similarity": float(row.similarity)
+            }
+            for row in rows
+        ]
+
+    async def search_with_learned_knowledge(
+        self,
+        query: str,
+        project_id: UUID,
+        chat_id: UUID | None = None,
+        limit_per_type: int = 5
+    ) -> dict:
+        """
+        Hybrid search across concepts, documents, and knowledge base.
+
+        Combines results from:
+        1. Learned book concepts (MarketingBookConcept)
+        2. User documents (via search_relevant_docs)
+        3. Knowledge base (via _vector_search)
+
+        Args:
+            query: Search query
+            project_id: Project ID
+            chat_id: Optional chat context
+            limit_per_type: Max results per source type
+
+        Returns:
+            Dict with concepts, documents, and knowledge_base results
+        """
+        # 1. Search learned concepts (new method)
+        concepts = await self.search_learned_concepts(
+            query=query,
+            project_id=project_id,
+            limit=limit_per_type,
+            similarity_threshold=0.6  # Lower threshold for broader results
+        )
+
+        # 2. Search user documents (existing method)
+        docs = await self.search_relevant_docs(
+            query=query,
+            project_id=project_id,
+            chat_id=chat_id,
+            limit=limit_per_type,
+            metadata_filters={"content_type": "user_document"},
+            rerank=False  # Keep it fast
+        )
+
+        # 3. Search general knowledge base (existing method)
+        kb_results = await self._vector_search(
+            query=query,
+            project_id=project_id,
+            chat_id=chat_id,
+            limit=limit_per_type
+        )
+
+        logger.info(
+            "[RAG] hybrid_search concepts=%s docs=%s kb=%s",
+            len(concepts), len(docs), len(kb_results)
+        )
+
+        return {
+            "concepts": concepts,
+            "documents": docs,
+            "knowledge_base": kb_results
+        }
