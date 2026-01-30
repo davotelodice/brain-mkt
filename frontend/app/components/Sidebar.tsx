@@ -217,6 +217,17 @@ export function Sidebar({ currentChatId, onChatSelect }: SidebarProps) {
         )}
       </div>
 
+      {/* Knowledge Library Link - TAREA 6 */}
+      <div className="p-4 border-t border-gray-800">
+        <button
+          onClick={() => router.push('/dashboard/knowledge')}
+          className="w-full flex items-center gap-2 px-3 py-2 text-gray-300 hover:bg-gray-800 rounded-lg transition text-sm"
+        >
+          <span className="text-lg">📚</span>
+          <span>Biblioteca de Conocimiento</span>
+        </button>
+      </div>
+
       {/* Footer */}
       <div className="p-4 border-t border-gray-800">
         <LogoutButton variant="sidebar" />
