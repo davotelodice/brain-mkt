@@ -29,9 +29,16 @@ export function LearnedBookCard({ book: initialBook, onDeleted, onViewConcepts }
 
     const pollInterval = setInterval(async () => {
       try {
-        const updated = await getBookStatus(book.id)
-        setBook(updated)
-        if (updated.status === 'completed' || updated.status === 'failed') {
+        const statusUpdate = await getBookStatus(book.id)
+        // Merge status update with existing book data to preserve title, author, etc.
+        setBook(prev => ({
+          ...prev,
+          status: statusUpdate.status,
+          processed_chunks: statusUpdate.processed_chunks ?? prev.processed_chunks,
+          total_chunks: statusUpdate.total_chunks ?? prev.total_chunks,
+          completed_at: statusUpdate.completed_at ?? prev.completed_at
+        }))
+        if (statusUpdate.status === 'completed' || statusUpdate.status === 'failed') {
           clearInterval(pollInterval)
         }
       } catch {
