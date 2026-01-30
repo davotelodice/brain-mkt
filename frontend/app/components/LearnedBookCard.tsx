@@ -23,7 +23,7 @@ export function LearnedBookCard({ book: initialBook, onDeleted, onViewConcepts }
 
   // Poll for status if processing
   useEffect(() => {
-    if (book.processing_status !== 'processing' && book.processing_status !== 'pending') {
+    if (book.status !== 'processing' && book.status !== 'pending') {
       return
     }
 
@@ -31,7 +31,7 @@ export function LearnedBookCard({ book: initialBook, onDeleted, onViewConcepts }
       try {
         const updated = await getBookStatus(book.id)
         setBook(updated)
-        if (updated.processing_status === 'completed' || updated.processing_status === 'failed') {
+        if (updated.status === 'completed' || updated.status === 'failed') {
           clearInterval(pollInterval)
         }
       } catch {
@@ -40,7 +40,7 @@ export function LearnedBookCard({ book: initialBook, onDeleted, onViewConcepts }
     }, 3000) // Poll every 3 seconds
 
     return () => clearInterval(pollInterval)
-  }, [book.id, book.processing_status])
+  }, [book.id, book.status])
 
   const handleDelete = async () => {
     if (!confirm('¿Seguro que quieres eliminar este libro? Esta acción no se puede deshacer.')) return
@@ -73,14 +73,15 @@ export function LearnedBookCard({ book: initialBook, onDeleted, onViewConcepts }
     })
   }
 
-  const statusConfig = {
+  const statusConfig: Record<string, { icon: string; text: string; color: string }> = {
     pending: { icon: '⏳', text: 'Pendiente', color: 'text-yellow-600 bg-yellow-50' },
     processing: { icon: '⚙️', text: 'Procesando...', color: 'text-blue-600 bg-blue-50' },
     completed: { icon: '✅', text: 'Completado', color: 'text-green-600 bg-green-50' },
     failed: { icon: '❌', text: 'Error', color: 'text-red-600 bg-red-50' }
   }
 
-  const status = statusConfig[book.processing_status]
+  // Fallback para status desconocido
+  const statusInfo = statusConfig[book.status] || { icon: '❓', text: book.status || 'Desconocido', color: 'text-gray-600 bg-gray-50' }
 
   return (
     <div className="bg-white border rounded-lg p-4 shadow-sm hover:shadow-md transition">
@@ -92,46 +93,47 @@ export function LearnedBookCard({ book: initialBook, onDeleted, onViewConcepts }
             <p className="text-sm text-gray-500 truncate">por {book.author}</p>
           )}
         </div>
-        <span className={`px-2 py-1 rounded text-xs font-medium ${status.color}`}>
-          {status.icon} {status.text}
+        <span className={`px-2 py-1 rounded text-xs font-medium ${statusInfo.color}`}>
+          {statusInfo.icon} {statusInfo.text}
         </span>
       </div>
 
       {/* Processing progress */}
-      {book.processing_status === 'processing' && (
+      {book.status === 'processing' && (
         <div className="mb-3">
           <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div className="h-full bg-blue-500 rounded-full animate-pulse" style={{ width: '60%' }} />
+            <div 
+              className="h-full bg-blue-500 rounded-full transition-all" 
+              style={{ width: book.total_chunks ? `${Math.round((book.processed_chunks / book.total_chunks) * 100)}%` : '30%' }} 
+            />
           </div>
-          <p className="text-xs text-gray-500 mt-1">Extrayendo conceptos...</p>
+          <p className="text-xs text-gray-500 mt-1">
+            {book.total_chunks ? `Procesando ${book.processed_chunks}/${book.total_chunks} chunks...` : 'Extrayendo conceptos...'}
+          </p>
         </div>
       )}
 
       {/* Error message */}
-      {book.processing_status === 'failed' && book.error_message && (
+      {book.status === 'failed' && book.error_message && (
         <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
           {book.error_message}
         </div>
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-2 mb-3 text-center">
+      <div className="grid grid-cols-2 gap-2 mb-3 text-center">
         <div className="bg-gray-50 rounded p-2">
-          <div className="text-lg font-bold text-gray-700">{book.total_chunks}</div>
+          <div className="text-lg font-bold text-gray-700">{book.total_chunks ?? '-'}</div>
           <div className="text-xs text-gray-500">Chunks</div>
         </div>
         <div className="bg-gray-50 rounded p-2">
-          <div className="text-lg font-bold text-gray-700">{book.total_concepts}</div>
-          <div className="text-xs text-gray-500">Conceptos</div>
-        </div>
-        <div className="bg-gray-50 rounded p-2">
-          <div className="text-lg font-bold text-gray-700">{formatFileSize(book.file_size)}</div>
-          <div className="text-xs text-gray-500">Tamaño</div>
+          <div className="text-lg font-bold text-gray-700">{book.processed_chunks ?? 0}</div>
+          <div className="text-xs text-gray-500">Procesados</div>
         </div>
       </div>
 
       {/* Summary preview */}
-      {book.processing_status === 'completed' && book.global_summary && (
+      {book.status === 'completed' && book.global_summary && (
         <div className="mb-3 p-3 bg-blue-50 rounded-lg">
           <p className="text-xs font-medium text-blue-700 mb-1">Resumen:</p>
           <p className="text-sm text-gray-700 line-clamp-3">{book.global_summary}</p>
@@ -140,25 +142,24 @@ export function LearnedBookCard({ book: initialBook, onDeleted, onViewConcepts }
 
       {/* Meta */}
       <div className="text-xs text-gray-400 mb-3">
-        <span>{book.file_type.toUpperCase()}</span>
-        <span className="mx-2">•</span>
+        {book.file_type && <><span>{book.file_type.toUpperCase()}</span><span className="mx-2">•</span></>}
         <span>Subido: {formatDate(book.created_at)}</span>
       </div>
 
       {/* Actions */}
       <div className="flex gap-2">
-        {book.processing_status === 'completed' && (
+        {book.status === 'completed' && (
           <button
             onClick={() => onViewConcepts?.(book)}
             className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
           >
-            Ver conceptos
+            Ver detalles
           </button>
         )}
         <button
           onClick={handleDelete}
           disabled={isDeleting}
-          className="px-3 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition text-sm disabled:opacity-50"
+          className={`px-3 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition text-sm disabled:opacity-50 ${book.status === 'completed' ? '' : 'flex-1'}`}
         >
           {isDeleting ? '...' : 'Eliminar'}
         </button>

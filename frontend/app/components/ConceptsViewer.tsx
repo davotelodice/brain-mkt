@@ -39,12 +39,12 @@ export function ConceptsViewer({ book, onClose }: ConceptsViewerProps) {
           {/* Stats */}
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-blue-50 rounded-lg p-4 text-center">
-              <div className="text-3xl font-bold text-blue-600">{book.total_chunks}</div>
-              <div className="text-sm text-blue-700">Fragmentos procesados</div>
+              <div className="text-3xl font-bold text-blue-600">{book.total_chunks ?? '-'}</div>
+              <div className="text-sm text-blue-700">Fragmentos totales</div>
             </div>
             <div className="bg-green-50 rounded-lg p-4 text-center">
-              <div className="text-3xl font-bold text-green-600">{book.total_concepts}</div>
-              <div className="text-sm text-green-700">Conceptos extraídos</div>
+              <div className="text-3xl font-bold text-green-600">{book.processed_chunks ?? 0}</div>
+              <div className="text-sm text-green-700">Chunks procesados</div>
             </div>
           </div>
 
@@ -62,30 +62,32 @@ export function ConceptsViewer({ book, onClose }: ConceptsViewerProps) {
           <div>
             <h3 className="font-semibold text-gray-700 mb-2">ℹ️ Información</h3>
             <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-500">Tipo de archivo:</span>
-                <span className="font-medium">{book.file_type.toUpperCase()}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-500">Tamaño:</span>
-                <span className="font-medium">
-                  {(book.file_size / (1024 * 1024)).toFixed(2)} MB
-                </span>
-              </div>
+              {book.file_type && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Tipo de archivo:</span>
+                  <span className="font-medium">{book.file_type.toUpperCase()}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-gray-500">Estado:</span>
                 <span className="font-medium text-green-600">
-                  ✅ Procesado completamente
+                  ✅ {book.status === 'completed' ? 'Procesado completamente' : book.status}
                 </span>
               </div>
-              {book.processing_completed_at && (
+              {book.completed_at && (
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Procesado:</span>
+                  <span className="text-gray-500">Completado:</span>
                   <span className="font-medium">
-                    {new Date(book.processing_completed_at).toLocaleString('es-ES')}
+                    {new Date(book.completed_at).toLocaleString('es-ES')}
                   </span>
                 </div>
               )}
+              <div className="flex justify-between">
+                <span className="text-gray-500">Creado:</span>
+                <span className="font-medium">
+                  {new Date(book.created_at).toLocaleString('es-ES')}
+                </span>
+              </div>
             </div>
           </div>
 
