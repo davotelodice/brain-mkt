@@ -4,6 +4,7 @@ from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    ARRAY,
     TIMESTAMP,
     UUID,
     Boolean,
@@ -15,6 +16,7 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
 
 from .database import Base
 
@@ -102,6 +104,10 @@ class MarketingKnowledgeBase(Base):
     metadata_ = Column("metadata", JSONB, default={})  # Renamed to avoid SQLAlchemy reserved name
     embedding = Column(Vector(1536), nullable=False)
     created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
+    
+    # Columnas nuevas para Book Learning System (migración 003)
+    knowledge_type = Column(String(50), default='raw_chunk')  # raw_chunk, extracted_concept, thematic_summary
+    learned_book_id = Column(UUID(as_uuid=True), ForeignKey('marketing_learned_books.id', ondelete='CASCADE'))
 
 
 class MarketingUserDocument(Base):
@@ -133,3 +139,52 @@ class MarketingPasswordResetToken(Base):
     expires_at = Column(TIMESTAMP, nullable=False)
     used = Column(Boolean, default=False, nullable=False)
     created_at = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
+
+
+# ========================================
+# BOOK LEARNING SYSTEM - Migración 003
+# ========================================
+
+class MarketingLearnedBook(Base):
+    """Learned books table - metadata de libros procesados para aprendizaje."""
+    __tablename__ = 'marketing_learned_books'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(UUID(as_uuid=True), ForeignKey('marketing_projects.id', ondelete='CASCADE'), nullable=False)
+    title = Column(String(500), nullable=False)
+    author = Column(String(255))
+    file_path = Column(String(1000))
+    file_type = Column(String(10))
+    processing_status = Column(
+        String(50),
+        CheckConstraint("processing_status IN ('pending', 'processing', 'completed', 'failed')"),
+        default='pending'
+    )
+    total_chunks = Column(Integer)
+    processed_chunks = Column(Integer, default=0)
+    global_summary = Column(JSONB)
+    created_at = Column(TIMESTAMP, default=datetime.utcnow)
+    completed_at = Column(TIMESTAMP)
+
+    # Relationships
+    project = relationship("MarketingProject", backref="learned_books")
+    concepts = relationship("MarketingBookConcept", back_populates="book", cascade="all, delete-orphan")
+
+
+class MarketingBookConcept(Base):
+    """Book concepts table - conceptos extraídos de chunks de libros."""
+    __tablename__ = 'marketing_book_concepts'
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    learned_book_id = Column(UUID(as_uuid=True), ForeignKey('marketing_learned_books.id', ondelete='CASCADE'), nullable=False)
+    chunk_index = Column(Integer, nullable=False)
+    main_concepts = Column(ARRAY(String))  # Array de conceptos principales
+    relationships = Column(ARRAY(String))  # Relaciones entre conceptos
+    key_examples = Column(ARRAY(String))   # Ejemplos clave
+    technical_terms = Column(JSONB)        # Términos técnicos con definiciones
+    condensed_text = Column(Text)          # Texto condensado para embedding
+    embedding = Column(Vector(1536))       # Vector embedding del concepto
+    created_at = Column(TIMESTAMP, default=datetime.utcnow)
+
+    # Relationships
+    book = relationship("MarketingLearnedBook", back_populates="concepts")
