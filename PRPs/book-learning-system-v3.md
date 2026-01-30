@@ -26,6 +26,49 @@ Agregar un sistema de "aprendizaje progresivo" al proyecto Marketing Brain exist
 
 ---
 
+## 🚨 FUNCIONALIDAD EXISTENTE - NO DUPLICAR
+
+### YA EXISTE en LLMService (NO recrear):
+```yaml
+generate_with_messages(messages: list):
+  Líneas: 141-197
+  Estado: ✅ YA IMPLEMENTADO
+  Uso: Para llamadas con historial
+
+stream_with_messages(messages: list):
+  Líneas: 199-255
+  Estado: ✅ YA IMPLEMENTADO
+  Uso: Para streaming con historial
+```
+
+### YA EXISTE en MemoryManager (REUTILIZAR):
+```yaml
+format_messages_from_memory():
+  Líneas: 142-199
+  Estado: ✅ YA IMPLEMENTADO
+  Uso: Convierte historial a formato OpenAI messages[]
+
+get_training_summary():
+  Líneas: 201-296
+  Estado: ✅ YA IMPLEMENTADO
+  ⭐ PATRÓN A SEGUIR para conceptos aprendidos
+  
+get_context():
+  Líneas: 52-121
+  Estado: ✅ YA IMPLEMENTADO
+  Acción: EXTENDER para incluir conceptos aprendidos
+```
+
+### NO EXISTE y NO SE CREARÁ:
+```yaml
+GeneralChatAgent:
+  Estado: ❌ NO EXISTE
+  Razón: Estrategia cambió (ver PRP marketing-brain-conversational-agent-v3.md)
+  Decisión: NO crear - mejorar ContentGeneratorAgent en su lugar
+```
+
+---
+
 ## 🔍 ANÁLISIS DEL PROYECTO EXISTENTE (Con MCP Serena)
 
 ### Servicios a REUTILIZAR (No duplicar)
@@ -48,10 +91,25 @@ LLMService (backend/src/services/llm_service.py):
   Métodos disponibles:
     - generate(prompt, temperature) → Generación simple
     - stream() → Streaming de respuesta
-    - generate_with_messages() → Con historial
-    - stream_with_messages() → Streaming con historial
+    - generate_with_messages() → Con historial (✅ YA EXISTE)
+    - stream_with_messages() → Streaming con historial (✅ YA EXISTE)
   
   USO: Usar generate() para extracción de conceptos
+  ⚠️ NO recrear generate_with_messages - YA EXISTE
+
+MemoryManager (backend/src/services/memory_manager.py):
+  Líneas: 17-421
+  Métodos disponibles:
+    - get_context() → Contexto completo para agentes (EXTENDER)
+    - format_messages_from_memory() → Convierte historial a messages[] (✅ YA EXISTE)
+    - get_training_summary() → Resumen de transcripciones (⭐ PATRÓN A SEGUIR)
+    - load_chat_history() → Carga historial de BD
+    - ensure_chat_loaded() → Verifica carga
+  
+  USO: 
+    - SEGUIR PATRÓN de get_training_summary() para conceptos
+    - EXTENDER get_context() para incluir conceptos aprendidos
+    - NO duplicar lógica de historial
 
 EmbeddingService (backend/src/services/embedding_service.py):
   Líneas: 6-59
@@ -200,16 +258,21 @@ FASE 7 - Testing:
    get_symbols_overview('backend/src/services/llm_service.py')
    get_symbols_overview('backend/src/services/embedding_service.py')
    get_symbols_overview('backend/src/services/document_processor.py')
+   get_symbols_overview('backend/src/services/memory_manager.py')
    
    # Leer métodos clave
    find_symbol('RAGService/search_relevant_docs', 'backend/src/services/rag_service.py', True)
    find_symbol('EmbeddingService/generate_embeddings_batch', 'backend/src/services/embedding_service.py', True)
+   
+   # ⭐ CRÍTICO: Ver patrón a seguir
+   find_symbol('MemoryManager/get_training_summary', 'backend/src/services/memory_manager.py', True)
+   find_symbol('MemoryManager/get_context', 'backend/src/services/memory_manager.py', True)
    ```
 
 3. **Analizar agentes existentes:**
    ```bash
    get_symbols_overview('backend/src/agents/content_generator_agent.py')
-   get_symbols_overview('backend/src/agents/general_chat_agent.py')
+   # ⚠️ NO existe general_chat_agent.py - NO intentar analizar
    ```
 
 4. **Analizar base de datos:**
@@ -227,8 +290,11 @@ FASE 7 - Testing:
 
 **Criterios de aceptación:**
 - [ ] Serena activado en proyecto brain-mkt
-- [ ] Todos los servicios analizados
-- [ ] INTEGRATION_ANALYSIS.md creado
+- [ ] Todos los servicios analizados (incluyendo MemoryManager)
+- [ ] Patrón get_training_summary() entendido y documentado
+- [ ] Verificado que generate_with_messages() YA EXISTE
+- [ ] Verificado que GeneralChatAgent NO existe
+- [ ] INTEGRATION_ANALYSIS.md creado/actualizado
 - [ ] Lista clara de "reutilizar vs extender vs crear"
 
 ---
@@ -809,37 +875,48 @@ class RAGService:
 ### TAREA 5: Integración con Agentes
 
 **Herramientas:**
-- 🔧 MCP Serena: Ver ContentGeneratorAgent y GeneralChatAgent
+- 🔧 MCP Serena: Ver ContentGeneratorAgent y MemoryManager
 - 📚 Skill: agent-memory-systems
 
-**Objetivo:** Que agentes usen conceptos aprendidos en respuestas.
+**Objetivo:** Que ContentGeneratorAgent use conceptos aprendidos en respuestas.
+
+**⚠️ IMPORTANTE:** 
+- `GeneralChatAgent` NO EXISTE y no se creará (ver PRP marketing-brain-conversational-agent-v3.md)
+- Solo modificar `ContentGeneratorAgent`
+- SEGUIR PATRÓN de `MemoryManager.get_training_summary()` para inyectar conceptos
 
 **Pasos:**
 
-1. **Analizar agentes existentes:**
+1. **Analizar agente y patrón existente:**
    ```bash
    get_symbols_overview('backend/src/agents/content_generator_agent.py')
    find_symbol('ContentGeneratorAgent/execute', '...', True)
+   find_symbol('MemoryManager/get_training_summary', 'backend/src/services/memory_manager.py', True)
    ```
 
-2. **Agregar método _search_learned_concepts():**
-   - Método privado en cada agente
-   - Usa RAGService.search_learned_concepts()
-   - NO reescribe lógica de búsqueda
+2. **Extender MemoryManager.get_context():**
+   - Agregar llamada a `RAGService.search_learned_concepts()`
+   - Incluir conceptos en contexto retornado
+   - SEGUIR PATRÓN de cómo se incluye `training_summary`
 
-3. **Modificar execute() para incluir conceptos:**
-   - Agregar conceptos al contexto del prompt
-   - Mantener funcionalidad existente intacta
+3. **Modificar ContentGeneratorAgent._build_system_prompt():**
+   - Incluir conceptos aprendidos del contexto
+   - Agregar sección "CONOCIMIENTO APRENDIDO DE LIBROS"
+   - Mantener secciones existentes (training_summary, buyer_persona, etc.)
 
 **Archivos a modificar:**
-- `backend/src/agents/content_generator_agent.py`
-- `backend/src/agents/general_chat_agent.py`
+- `backend/src/services/memory_manager.py` (extender get_context)
+- `backend/src/agents/content_generator_agent.py` (usar conceptos en prompt)
 
-**⚠️ CRÍTICO:** NO reescribir agentes, solo AGREGAR funcionalidad.
+**⚠️ CRÍTICO:** 
+- NO crear GeneralChatAgent
+- NO reescribir agentes, solo AGREGAR funcionalidad
+- SEGUIR PATRÓN existente de get_training_summary()
 
 **Criterios de aceptación:**
-- [ ] Agentes usan conceptos aprendidos
-- [ ] Respuestas más contextuales
+- [ ] MemoryManager.get_context() incluye conceptos aprendidos
+- [ ] ContentGeneratorAgent usa conceptos en system prompt
+- [ ] Respuestas incluyen conocimiento de libros procesados
 - [ ] Funcionalidad existente NO afectada
 - [ ] Tests de agentes pasan
 
@@ -967,6 +1044,18 @@ pytest --cov=src/services/book_learning_service --cov-report=term-missing
 6. Similarity Threshold:
    PROBLEMA: "Threshold muy bajo retorna conceptos irrelevantes"
    SOLUCIÓN: "Usar 0.7-0.8, ajustar según feedback"
+
+7. ⚠️ DUPLICACIÓN DE CÓDIGO:
+   PROBLEMA: "Recrear métodos que ya existen"
+   SOLUCIÓN: "VERIFICAR antes de crear: generate_with_messages(), format_messages_from_memory() YA EXISTEN"
+   
+8. ⚠️ AGENTE INEXISTENTE:
+   PROBLEMA: "Intentar modificar GeneralChatAgent que no existe"
+   SOLUCIÓN: "Solo modificar ContentGeneratorAgent. GeneralChatAgent NO existe ni se creará"
+   
+9. ⚠️ PATRÓN NO SEGUIDO:
+   PROBLEMA: "Crear nueva lógica para conceptos sin seguir patrón existente"
+   SOLUCIÓN: "SEGUIR PATRÓN de MemoryManager.get_training_summary() para inyectar conceptos"
 ```
 
 ---
@@ -997,9 +1086,14 @@ Justificación:
 | T2: Service | services/book_learning_service.py, schemas/knowledge.py | - | Alta |
 | T3: API | api/knowledge.py | main.py | Alta |
 | T4: RAG | - | services/rag_service.py | Media |
-| T5: Agents | - | agents/*.py | Media |
+| T5: Agents | - | memory_manager.py, content_generator_agent.py | Media |
 | T6: Frontend | 4 componentes, 1 página | Sidebar.tsx, api-chat.ts | Media |
 | T7: Tests | tests/*.py, docs/*.md | README.md | Baja |
+
+**⚠️ ADVERTENCIAS CRÍTICAS:**
+- `LLMService.generate_with_messages()` YA EXISTE - NO recrear
+- `MemoryManager.get_training_summary()` es PATRÓN A SEGUIR
+- `GeneralChatAgent` NO existe y NO se creará - solo modificar ContentGeneratorAgent
 
 **Principio guía:** REUTILIZAR > EXTENDER > CREAR
 
