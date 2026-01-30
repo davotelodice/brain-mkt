@@ -9,7 +9,7 @@ dependencies = [
     "uvicorn[standard]>=0.27.0",
     
     # Pydantic
-    "pydantic>=2.5.0",
+    "pydantic[email]>=2.5.0",
     "pydantic-settings>=2.1.0",
     
     # Database
@@ -19,7 +19,9 @@ dependencies = [
     "pgvector>=0.2.4",
     
     # AI/ML
-    "langchain>=0.1.0",
+    # Nota: usamos una versión de LangChain que mantiene el módulo langchain.memory
+    # para evitar roturas de import en producción.
+    "langchain>=0.0.350,<0.1.0",
     "langgraph>=0.0.20",
     "openai>=1.12.0",
     "tiktoken>=0.6.0",

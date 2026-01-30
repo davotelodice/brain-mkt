@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: marketing-brain-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # CORS para frontend dentro de Docker
+      - BACKEND_CORS_ORIGINS=http://localhost:3000,http://frontend:3000
+    volumes:
+      # ✅ GOTCHA Windows/WSL: named volume para almacenamiento interno
+      - backend_storage:/app/storage
+      # Bind mount solo de código fuente para desarrollo (opcional)
+      - ./backend/src:/app/src:ro
+    depends_on:
+      - redis
+
+  frontend:
+    build: ./frontend
+    container_name: marketing-brain-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      # El frontend habla con el backend por nombre de servicio dentro de la red de Docker
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    volumes:
+      # Bind mounts de código para DX en desarrollo (opcional)
+      - ./frontend/app:/app/app:ro
+      - ./frontend/app/components:/app/app/components:ro
+    depends_on:
+      - backend
+
+  redis:
+    image: redis:7-alpine
+    container_name: marketing-brain-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      # ✅ GOTCHA 8: named volume en vez de bind mount
+      - redis_data:/data
+
+  # MCP server como servicio HTTP (para integración con Cursor via HTTP)
+  mcp-marketing-brain:
+    build: ./mcp-marketing-brain
+    container_name: marketing-brain-mcp
+    ports:
+      - "8080:8080"
+    environment:
+      - BACKEND_API_URL=http://backend:8000
+      - MCP_TRANSPORT=http
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8080
+      # Si usas JWT o API key para llamadas internas, configúralo aquí:
+      # - BACKEND_API_TOKEN=...
+    depends_on:
+      - backend
+
+volumes:
+  backend_storage:
+  redis_data:
+

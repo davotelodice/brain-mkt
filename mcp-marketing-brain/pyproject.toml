@@ -1,0 +1,18 @@
+ [project]
+ name = "mcp-marketing-brain"
+ version = "0.1.0"
+ description = "MCP server to expose Marketing Brain tools (read-only) to Cursor."
+ requires-python = ">=3.11"
+dependencies = [
+ "httpx",
+ "mcp",  # SDK oficial MCP para Python
+ "uvicorn[standard]",  # Requerido para transporte HTTP en FastMCP
+]
+
+ [project.optional-dependencies]
+ dev = ["pytest", "ruff"]
+
+ [tool.mcp]
+ # Nombre lógico del servidor MCP que se usará en la config de Cursor.
+ server_name = "marketing-brain"
+

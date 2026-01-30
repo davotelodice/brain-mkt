@@ -63,45 +63,55 @@ Un sistema inteligente que:
 /home/david/brain-mkt/
 ├── README.md                           # ← Este archivo
 ├── .env.example                        # Plantilla de variables de entorno
-├── docker-compose.yml                  # Orquestación de servicios
+├── docker-compose.yml                  # Orquestación de 4 servicios
 │
 ├── frontend/                           # Next.js 14 App
-│   ├── app/                            # App Router
-│   ├── components/                     # Componentes React
-│   ├── lib/                            # Utilidades
+│   ├── app/
+│   │   ├── components/                 # ChatInterface, Sidebar, TracePanel
+│   │   ├── page.tsx                    # Página principal
+│   │   └── layout.tsx
+│   ├── lib/
+│   │   └── api-chat.ts                 # Utilidades API (CRUD chats)
 │   └── Dockerfile
 │
 ├── backend/                            # FastAPI App
 │   ├── src/
 │   │   ├── api/                        # Endpoints (auth, chat, documents)
-│   │   ├── agents/                     # Agentes IA (router, buyer_persona, etc.)
-│   │   ├── services/                   # LLM, embeddings, vector search
-│   │   ├── db/                         # Models, migrations
-│   │   ├── schemas/                    # Pydantic schemas
-│   │   └── utils/                      # JWT, password, file parsers
+│   │   ├── agents/                     # 7 agentes IA
+│   │   │   ├── router_agent.py         # Orquestador principal
+│   │   │   ├── content_generator_agent.py  # Generador de ideas
+│   │   │   ├── buyer_persona_agent.py
+│   │   │   ├── forum_simulator_agent.py
+│   │   │   ├── pain_points_agent.py
+│   │   │   ├── customer_journey_agent.py
+│   │   │   └── document_processor_agent.py
+│   │   ├── services/                   # LLM, embeddings, memory
+│   │   ├── db/                         # Models SQLAlchemy
+│   │   └── schemas/                    # Pydantic schemas
 │   ├── scripts/
-│   │   └── ingest_training_data.py     # Procesar transcripciones
-│   ├── tests/                          # Tests unitarios + integración
+│   │   └── ingest_training_data.py
+│   └── Dockerfile
+│
+├── mcp-marketing-brain/                # 🆕 MCP Server
+│   ├── src/
+│   │   └── server.py                   # FastMCP con 3 tools
+│   ├── pyproject.toml                  # Dependencias: mcp, httpx, uvicorn
 │   └── Dockerfile
 │
 ├── contenido/                          # Material de entrenamiento
-│   ├── buyer-plantilla.md              # Plantilla de buyer persona (11 categorías)
-│   ├── promts_borradores.md            # Prompts v1.0 (originales)
-│   ├── prompts-mejorados-v2.md         # Prompts v2.0 (con técnicas avanzadas)
-│   └── Transcriptions Andrea Estratega/  # 9 transcripciones de YouTube
+│   ├── buyer-plantilla.md
+│   ├── prompts-mejorados-v2.md
+│   └── Transcriptions Andrea Estratega/
 │
 ├── docs/                               # Documentación técnica
-│   ├── gotchas-detallados-y-soluciones.md      # 10 gotchas críticos
-│   ├── supabase-self-hosted-setup.md           # Guía de instalación Supabase
-│   └── architecture.md                         # Arquitectura del sistema (TBD)
+│   ├── gotchas-detallados-y-soluciones.md
+│   ├── supabase-self-hosted-setup.md
+│   └── qa-plan3-tecnicas-aplicadas.md  # 🆕 QA manual
 │
 ├── PRPs/                               # Product Requirement Prompts
-│   └── marketing-brain-system-v3.md    # PRP completo del proyecto
+│   └── marketing-brain-system-v3.md
 │
 └── Context-Engineering-Intro/         # Ejemplos y templates de referencia
-    ├── examples/
-    ├── PRPs/
-    └── validation/
 ```
 
 ---
@@ -124,12 +134,12 @@ cp .env.example .env
 # Editar con tus credenciales
 nano .env
 
-# Asegúrate de tener:
-# - SUPABASE_URL
-# - SUPABASE_SERVICE_ROLE_KEY
-# - ANTHROPIC_API_KEY
-# - OPENAI_API_KEY
-# - JWT_SECRET_KEY (ya generada en .env.example)
+# Variables REQUERIDAS:
+# - SUPABASE_URL              # URL de tu instancia Supabase
+# - SUPABASE_SERVICE_ROLE_KEY # Service role key (Admin)
+# - ANTHROPIC_API_KEY         # API key de Anthropic
+# - OPENAI_API_KEY            # API key de OpenAI (embeddings)
+# - JWT_SECRET_KEY            # Secret para tokens JWT
 ```
 
 **📚 Guía**: Ver `docs/supabase-self-hosted-setup.md` si usas Supabase en VPS
@@ -148,17 +158,17 @@ psql $SUPABASE_DB_URL
 ### 4. Iniciar Servicios con Docker
 
 ```bash
-# Construir imágenes
-docker compose build
-
-# Iniciar servicios
-docker compose up -d
-
-# Ver logs
-docker compose logs -f
+# Construir y levantar todos los servicios
+docker compose up --build -d
 
 # Verificar que todo está corriendo
 docker compose ps
+
+# Esperado: 4 contenedores "Up"
+# - marketing-brain-frontend (3000)
+# - marketing-brain-backend  (8000)
+# - marketing-brain-mcp      (8080)
+# - marketing-brain-redis    (6379)
 ```
 
 ### 5. Ingestar Material de Entrenamiento
@@ -174,9 +184,93 @@ docker compose exec backend python scripts/ingest_training_data.py \
 
 ### 6. Acceder a la Aplicación
 
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
+| Servicio | URL | Descripción |
+|----------|-----|-------------|
+| **Frontend** | http://localhost:3000 | Interfaz de usuario |
+| **Backend API** | http://localhost:8000 | API REST |
+| **API Docs** | http://localhost:8000/docs | Swagger/OpenAPI |
+| **MCP Server** | http://localhost:8080/mcp | MCP para Cursor |
+
+---
+
+## 🐳 Docker Architecture
+
+El sistema usa Docker Compose para orquestar 4 servicios:
+
+```yaml
+services:
+  frontend:        # Next.js 14 (puerto 3000)
+  backend:         # FastAPI (puerto 8000)
+  mcp-marketing-brain:  # MCP Server (puerto 8080)
+  redis:           # Cache (puerto 6379)
+```
+
+### Comandos Docker Útiles
+
+```bash
+# Iniciar todos los servicios
+docker compose up -d
+
+# Ver logs de un servicio específico
+docker compose logs -f backend
+
+# Reconstruir un servicio
+docker compose up --build -d backend
+
+# Detener todos los servicios
+docker compose down
+
+# Limpiar volúmenes (CUIDADO: borra datos)
+docker compose down -v
+```
+
+### Variables de Entorno Docker
+
+El archivo `docker-compose.yml` configura:
+
+- `NEXT_PUBLIC_API_URL=http://localhost:8000` - URL del backend para el frontend
+- `BACKEND_CORS_ORIGINS` - Orígenes permitidos para CORS
+- `MCP_TRANSPORT=http` - Transporte HTTP para el MCP server
+
+---
+
+## 🔌 MCP Server (Model Context Protocol)
+
+El proyecto incluye un servidor MCP para integración con Cursor/Claude Desktop.
+
+### Tools Disponibles
+
+| Tool | Descripción |
+|------|-------------|
+| `mb_list_chats` | Lista todos los chats del proyecto |
+| `mb_get_chat_analysis` | Obtiene análisis completo (buyer persona, foro, journey) |
+| `mb_generate_content_ideas_stub` | Placeholder para generación de contenido |
+
+### Configuración en Cursor
+
+Para usar el MCP con Cursor, agrega a tu configuración MCP:
+
+```json
+{
+  "mcpServers": {
+    "marketing-brain": {
+      "command": "npx",
+      "args": ["mcp-remote", "http://localhost:8080/mcp"],
+      "env": {}
+    }
+  }
+}
+```
+
+### Variables de Entorno MCP
+
+```bash
+# En docker-compose.yml o .env
+MCP_TRANSPORT=http          # Transporte: stdio | http
+MCP_HOST=0.0.0.0           # Host (0.0.0.0 para Docker)
+MCP_PORT=8080              # Puerto
+BACKEND_API_URL=http://backend:8000  # URL del backend (interno Docker)
+```
 
 ---
 
@@ -293,13 +387,38 @@ docker compose exec backend pytest --cov=src tests/
 
 ## 🚨 Troubleshooting
 
-### "Cannot connect to database"
+### Docker: "Cannot connect to database"
 ```bash
-# Verificar que Supabase está corriendo
-docker compose ps | grep supabase
+# Verificar variables de entorno
+docker compose exec backend env | grep SUPABASE
 
-# Ver logs
-docker compose logs backend
+# Ver logs del backend
+docker compose logs backend | tail -50
+```
+
+### Docker: "Frontend cannot reach backend"
+```bash
+# Verificar que NEXT_PUBLIC_API_URL apunta a localhost, NO a 'backend'
+# El navegador no puede resolver nombres de Docker network
+
+# ✅ Correcto (para el navegador)
+NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# ❌ Incorrecto
+NEXT_PUBLIC_API_URL=http://backend:8000
+```
+
+### Docker: "MCP server not responding"
+```bash
+# Verificar logs del MCP
+docker logs marketing-brain-mcp
+
+# Esperado:
+# INFO: Uvicorn running on http://0.0.0.0:8080
+
+# Test endpoint
+curl http://localhost:8080/mcp
+# Esperado: {"jsonrpc":"2.0","error":{"code":-32600,...}}
 ```
 
 ### "OpenAI rate limit error"
@@ -317,6 +436,17 @@ psql $SUPABASE_DB_URL -c "\d+ marketing_knowledge_base"
 # Esperado: "hnsw" en columna embedding
 ```
 
+### Agent: "Respuestas truncadas o incompletas"
+```bash
+# Verificar variables de tracing en .env
+AGENT_TRACE=1
+AGENT_TRACE_SHOW_PROMPTS=1
+SSE_DEBUG=1
+
+# Revisar panel de Trace en el frontend
+# (botón "Trace (SSE debug)" en la interfaz)
+```
+
 Más soluciones: `docs/gotchas-detallados-y-soluciones.md`
 
 ---
@@ -324,21 +454,30 @@ Más soluciones: `docs/gotchas-detallados-y-soluciones.md`
 ## 📈 Roadmap
 
 ### ✅ Fase 1 - MVP (Completado)
-- [ ] Base de datos configurada
-- [ ] Backend con autenticación
-- [ ] Agente IA con memoria
-- [ ] Frontend básico
+- [x] Base de datos configurada (PostgreSQL + pgvector)
+- [x] Backend con autenticación JWT
+- [x] Agente IA con memoria triple
+- [x] Frontend básico Next.js
 
-### 🔄 Fase 2 - Features Avanzadas (En progreso)
-- [ ] Upload de documentos
-- [ ] Streaming de respuestas
-- [ ] Mejora de prompts (v2.0 con técnicas avanzadas)
+### ✅ Fase 2 - Features Avanzadas (Completado)
+- [x] Upload de documentos (.txt, .pdf, .docx)
+- [x] Streaming de respuestas (SSE)
+- [x] Mejora de prompts (v2.0 con técnicas avanzadas)
+- [x] Panel de trazabilidad (debug) en frontend
+- [x] Modo consultivo + modo ideas JSON
+- [x] Edición y eliminación de chats
 
-### 🚀 Fase 3 - Production Ready (Planeado)
-- [ ] MCP custom del proyecto
-- [ ] Docker + deployment
-- [ ] Testing end-to-end
-- [ ] Documentación completa
+### ✅ Fase 3 - Production Ready (Completado)
+- [x] MCP custom del proyecto (3 tools read-only)
+- [x] Docker + deployment (4 servicios)
+- [x] Documentación completa (README actualizado)
+- [ ] Testing end-to-end (skeletons pendientes)
+
+### 🔮 Fase 4 - Futuras Mejoras (Planeado)
+- [ ] Cache Redis para training_summary
+- [ ] Generación de contenido via MCP
+- [ ] Dashboard de analytics
+- [ ] Exportación de contenido
 
 ---
 
@@ -378,5 +517,5 @@ MIT License - Ver `LICENSE` para detalles
 
 ---
 
-**Última actualización**: 2026-01-26  
-**Versión**: 1.0.0 (MVP)
+**Última actualización**: 2026-01-30  
+**Versión**: 2.0.0 (Production Ready)
