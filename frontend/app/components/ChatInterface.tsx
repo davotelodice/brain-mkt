@@ -5,10 +5,11 @@ import { MessageList } from './MessageList'
 import { DocumentUpload } from './DocumentUpload'
 import { AnalysisPanel } from './AnalysisPanel'
 import type { Message } from '@/lib/types'
-import { streamMessage, getMessages } from '@/lib/api-chat'
+import { streamMessage, getMessages, createChat } from '@/lib/api-chat'
 
 interface ChatInterfaceProps {
-  chatId: string
+  chatId?: string  // Optional - can be undefined for new chat
+  onChatCreated?: (newChatId: string) => void  // Callback when chat is created
 }
 
 /**
@@ -17,24 +18,37 @@ interface ChatInterfaceProps {
  * ✅ GOTCHA 4: Client Component ('use client')
  * ✅ react-ui-patterns: Loading states, error handling, optimistic updates
  * ✅ context-window-management: Auto-scroll, message accumulation
+ * ✅ TAREA 6.3: Chat se crea SOLO al enviar primer mensaje
  */
-export function ChatInterface({ chatId }: ChatInterfaceProps) {
+export function ChatInterface({ chatId, onChatCreated }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(false)  // Start false - no loading for welcome state
   const [showAnalysis, setShowAnalysis] = useState(false)
   const [showTrace, setShowTrace] = useState(false)
   const [traceRuns, setTraceRuns] = useState<Array<{ startedAt: string; userMessage: string; events: unknown[] }>>([])
   const [selectedTraceRunIndex, setSelectedTraceRunIndex] = useState<number | null>(null)
+  const [activeChatId, setActiveChatId] = useState<string | undefined>(chatId)
 
-  // Load existing messages on mount
+  // Sync activeChatId with prop
+  useEffect(() => {
+    setActiveChatId(chatId)
+  }, [chatId])
+
+  // Load existing messages when chatId changes
   useEffect(() => {
     async function loadMessages() {
+      if (!activeChatId) {
+        setMessages([])
+        setIsLoading(false)
+        return
+      }
+      
       try {
         setIsLoading(true)
-        const loadedMessages = await getMessages(chatId)
+        const loadedMessages = await getMessages(activeChatId)
         setMessages(loadedMessages)
         setError(null)
       } catch (err) {
@@ -44,10 +58,8 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
       }
     }
 
-    if (chatId) {
-      loadMessages()
-    }
-  }, [chatId])
+    loadMessages()
+  }, [activeChatId])
 
   // Handle message send with streaming
   const handleSend = useCallback(async () => {
@@ -56,6 +68,29 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
     const userMessage = input.trim()
     setInput('')
     setError(null)
+    
+    // ✅ TAREA 6.3: Create chat on first message if none exists
+    let currentChatId = activeChatId
+    if (!currentChatId) {
+      try {
+        // Extract first words for title (max 50 chars)
+        const title = userMessage.length > 50 
+          ? userMessage.substring(0, 47) + '...' 
+          : userMessage
+        
+        const newChat = await createChat({ title })
+        currentChatId = newChat.id
+        setActiveChatId(currentChatId)
+        
+        // Notify parent component
+        if (onChatCreated) {
+          onChatCreated(currentChatId)
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to create chat')
+        return
+      }
+    }
     
     // Create new trace run for this message
     const newRun = {
@@ -93,8 +128,8 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
       }
       setMessages((prev) => [...prev, tempAssistantMessage])
 
-      // Stream response
-      for await (const chunk of streamMessage(chatId, userMessage)) {
+      // Stream response - use currentChatId (may be newly created)
+      for await (const chunk of streamMessage(currentChatId, userMessage)) {
         if (chunk.type === 'done') {
           break
         }
@@ -134,7 +169,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
       }
 
       // Reload messages from server to get final IDs
-      const updatedMessages = await getMessages(chatId)
+      const updatedMessages = await getMessages(currentChatId)
       setMessages(updatedMessages)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send message')
@@ -145,7 +180,7 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
     } finally {
       setIsStreaming(false)
     }
-  }, [input, isStreaming, chatId])
+  }, [input, isStreaming, activeChatId, onChatCreated])
 
   // Handle Enter key
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -155,8 +190,8 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
     }
   }
 
-  // Loading state
-  if (isLoading) {
+  // Loading state (only when loading existing chat)
+  if (isLoading && activeChatId) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="text-center">
@@ -167,8 +202,8 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
     )
   }
 
-  // Error state
-  if (error && messages.length === 0) {
+  // Error state (only show if we have a chat and failed to load)
+  if (error && messages.length === 0 && activeChatId) {
     return (
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="text-center">
@@ -188,29 +223,36 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
     )
   }
 
+  // ✅ TAREA 6.3: Welcome state - no chat yet
+  const isWelcomeState = !activeChatId && messages.length === 0
+
   return (
     <div className="flex flex-col h-full bg-white">
       <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-2">
-        <div className="text-sm font-semibold text-gray-900">Chat</div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowTrace((v) => !v)}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-          >
-            {showTrace ? 'Ocultar trace' : 'Ver trace'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowAnalysis((v) => !v)}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-          >
-            {showAnalysis ? 'Ocultar análisis' : 'Ver análisis'}
-          </button>
+        <div className="text-sm font-semibold text-gray-900">
+          {isWelcomeState ? 'Nueva Conversación' : 'Chat'}
         </div>
+        {activeChatId && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowTrace((v) => !v)}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+            >
+              {showTrace ? 'Ocultar trace' : 'Ver trace'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAnalysis((v) => !v)}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+            >
+              {showAnalysis ? 'Ocultar análisis' : 'Ver análisis'}
+            </button>
+          </div>
+        )}
       </div>
 
-      {showTrace ? (
+      {showTrace && activeChatId ? (
         <div className="border-b border-gray-200 px-4 py-3 bg-gray-50">
           <div className="text-xs font-semibold text-gray-700 mb-2">Trace (SSE debug)</div>
           {traceRuns.length === 0 ? (
@@ -261,17 +303,49 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
         </div>
       ) : null}
 
-      {showAnalysis ? (
+      {showAnalysis && activeChatId ? (
         <div className="border-b border-gray-200 px-4 py-3 bg-gray-50">
-          <AnalysisPanel chatId={chatId} />
+          <AnalysisPanel chatId={activeChatId} />
         </div>
       ) : null}
 
-      {/* Messages area */}
-      <MessageList messages={messages} isStreaming={isStreaming} />
+      {/* Messages area or Welcome state */}
+      {isWelcomeState ? (
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="text-center max-w-lg">
+            <div className="text-6xl mb-6">🧠</div>
+            <h2 className="text-2xl font-bold text-gray-800 mb-3">
+              Marketing Second Brain
+            </h2>
+            <p className="text-gray-600 mb-6">
+              Tu asistente inteligente de marketing. Escribe tu mensaje para comenzar una nueva conversación.
+            </p>
+            <div className="grid grid-cols-2 gap-3 text-sm text-gray-500">
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <span className="text-lg">📝</span>
+                <p className="mt-1">Genera contenido viral</p>
+              </div>
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <span className="text-lg">👤</span>
+                <p className="mt-1">Crea buyer personas</p>
+              </div>
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <span className="text-lg">🎯</span>
+                <p className="mt-1">Estrategias de marketing</p>
+              </div>
+              <div className="p-3 bg-gray-50 rounded-lg">
+                <span className="text-lg">📚</span>
+                <p className="mt-1">Aprende de libros</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <MessageList messages={messages} isStreaming={isStreaming} />
+      )}
 
-      {/* Error banner (if error during streaming) */}
-      {error && messages.length > 0 && (
+      {/* Error banner (if error during streaming or chat creation) */}
+      {error && (
         <div className="px-4 py-2 bg-red-50 border-t border-red-200">
           <div className="flex items-center gap-2 text-red-700 text-sm">
             <span>⚠️</span>
@@ -286,10 +360,12 @@ export function ChatInterface({ chatId }: ChatInterfaceProps) {
         </div>
       )}
 
-      {/* Document upload */}
-      <div className="px-4 py-2 border-t border-gray-200 bg-gray-50">
-        <DocumentUpload chatId={chatId} />
-      </div>
+      {/* Document upload - only show when chat exists */}
+      {activeChatId && (
+        <div className="px-4 py-2 border-t border-gray-200 bg-gray-50">
+          <DocumentUpload chatId={activeChatId} />
+        </div>
+      )}
 
       {/* Input area */}
       <div className="px-4 py-4 border-t border-gray-200 bg-white">

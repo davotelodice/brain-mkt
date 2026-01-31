@@ -1084,11 +1084,18 @@ FLUJO ACTUAL:
 - `frontend/app/components/Sidebar.tsx` (posiblemente)
 
 **Criterios de aceptación:**
-- [ ] Entrar a `/` NO crea chat automáticamente
-- [ ] Chat se crea SOLO al enviar primer mensaje
-- [ ] URL se actualiza con nuevo chatId
-- [ ] Lista de chats se actualiza en sidebar
-- [ ] No más chats vacíos en base de datos
+- [x] Entrar a `/` NO crea chat automáticamente ✅
+- [x] Chat se crea SOLO al enviar primer mensaje ✅
+- [x] URL se actualiza con nuevo chatId ✅
+- [x] Lista de chats se actualiza en sidebar ✅
+- [x] No más chats vacíos en base de datos ✅
+
+**Estado: ✅ COMPLETADA (2026-01-31)**
+
+**Cambios realizados:**
+- `ChatPageContent.tsx`: Eliminada creación automática, añadido callback `onChatCreated`
+- `ChatInterface.tsx`: Acepta `chatId` opcional, crea chat al enviar primer mensaje, UI de bienvenida
+- `Sidebar.tsx`: Botón "Nueva Conversación" navega a `/` sin crear chat, eliminada import de `createChat`
 
 ---
 
@@ -1424,7 +1431,7 @@ Justificación:
 | T5: Agents | - | memory_manager.py, content_generator_agent.py | Media | ✅ |
 | T6.1: Docker | - | docker-compose.yml | Alta | ✅ |
 | T6.2: Markdown | - | content_generator_agent.py | Alta | ✅ |
-| T6.3: Chats vacíos | - | ChatPageContent.tsx, ChatInterface.tsx | Media | ⏳ |
+| T6.3: Chats vacíos | - | ChatPageContent.tsx, ChatInterface.tsx, Sidebar.tsx | Media | ✅ |
 | T6.4: Optimización | - | book_learning_service.py, docker-compose.yml | Alta | ⏳ |
 | T7: Tests | tests/*.py, docs/*.md | README.md | Baja | ⏳ |
 

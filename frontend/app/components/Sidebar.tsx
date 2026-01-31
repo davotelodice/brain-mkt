@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { LogoutButton } from './LogoutButton'
 import type { ChatSummary } from '@/lib/types'
-import { listChats, createChat, updateChatTitle, deleteChat } from '@/lib/api-chat'
+import { listChats, updateChatTitle, deleteChat } from '@/lib/api-chat'
 
 interface SidebarProps {
   currentChatId?: string
@@ -16,12 +16,12 @@ interface SidebarProps {
  * 
  * ✅ react-ui-patterns: Loading states, error handling, empty states
  * ✅ frontend-design: Clean sidebar with hover states
+ * ✅ TAREA 6.3: NO crea chat automáticamente - solo navega a estado de bienvenida
  */
 export function Sidebar({ currentChatId, onChatSelect }: SidebarProps) {
   const [chats, setChats] = useState<ChatSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [isCreating, setIsCreating] = useState(false)
   const router = useRouter()
 
   // Load chats on mount
@@ -66,37 +66,21 @@ export function Sidebar({ currentChatId, onChatSelect }: SidebarProps) {
       await deleteChat(chatId)
       setChats((prev) => prev.filter((chat) => chat.id !== chatId))
 
+      // If deleted current chat, go to welcome state
       if (currentChatId === chatId) {
-        // Seleccionar otro chat si existe, si no limpiar
-        const remaining = chats.filter((chat) => chat.id !== chatId)
-        const next = remaining[0]
-        if (next) {
-          onChatSelect(next.id)
-          router.push(`/?chat=${next.id}`)
-        } else {
-          onChatSelect('')
-          router.push('/?')
-        }
+        onChatSelect('')
+        router.push('/')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete chat')
     }
   }
 
-  const handleCreateChat = async () => {
-    if (isCreating) return
-
-    try {
-      setIsCreating(true)
-      const newChat = await createChat({ title: 'Nueva Conversación' })
-      await loadChats() // Reload to get updated list
-      onChatSelect(newChat.id)
-      router.push(`/?chat=${newChat.id}`)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create chat')
-    } finally {
-      setIsCreating(false)
-    }
+  // ✅ TAREA 6.3: No crear chat - solo navegar a estado de bienvenida
+  const handleNewConversation = () => {
+    // Clear current chat selection and navigate to home
+    onChatSelect('')
+    router.push('/')
   }
 
   const formatDate = (dateString: string) => {
@@ -122,21 +106,11 @@ export function Sidebar({ currentChatId, onChatSelect }: SidebarProps) {
       <div className="p-4 border-b border-gray-800">
         <h1 className="text-xl font-bold mb-2">🧠 Marketing Brain</h1>
         <button
-          onClick={handleCreateChat}
-          disabled={isCreating}
-          className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          onClick={handleNewConversation}
+          className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition flex items-center justify-center gap-2"
         >
-          {isCreating ? (
-            <>
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              <span>Creando...</span>
-            </>
-          ) : (
-            <>
-              <span>+</span>
-              <span>Nueva Conversación</span>
-            </>
-          )}
+          <span>+</span>
+          <span>Nueva Conversación</span>
         </button>
       </div>
 
@@ -163,7 +137,7 @@ export function Sidebar({ currentChatId, onChatSelect }: SidebarProps) {
             <div className="text-4xl mb-2">💬</div>
             <p className="text-sm text-gray-400 mb-2">No hay conversaciones</p>
             <p className="text-xs text-gray-500">
-              Crea una nueva para comenzar
+              Escribe un mensaje para comenzar
             </p>
           </div>
         ) : (
