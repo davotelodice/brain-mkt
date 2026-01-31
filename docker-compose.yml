@@ -9,6 +9,8 @@ services:
     environment:
       # CORS para frontend dentro de Docker
       - BACKEND_CORS_ORIGINS=http://localhost:3000,http://frontend:3000
+      # TAREA 6.4: Procesamiento paralelo de chunks de libros
+      - BOOK_PARALLEL_CHUNKS=10
     volumes:
       # ✅ GOTCHA Windows/WSL: named volume para almacenamiento interno
       - backend_storage:/app/storage
@@ -16,6 +18,15 @@ services:
       - ./backend/src:/app/src:ro
     depends_on:
       - redis
+    # TAREA 6.4: Límites de recursos para estabilidad
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
 
   frontend:
     build: ./frontend
@@ -31,6 +42,15 @@ services:
       - ./frontend/lib:/app/lib:ro
     depends_on:
       - backend
+    # TAREA 6.4: Límites de recursos (frontend es ligero)
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   redis:
     image: redis:7-alpine
@@ -40,6 +60,15 @@ services:
     volumes:
       # ✅ GOTCHA 8: named volume en vez de bind mount
       - redis_data:/data
+    # TAREA 6.4: Límites de recursos para Redis
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   # MCP server como servicio HTTP (para integración con Cursor via HTTP)
   mcp-marketing-brain:

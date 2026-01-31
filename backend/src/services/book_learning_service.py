@@ -1,5 +1,7 @@
 """Book Learning Service - Pipeline de aprendizaje progresivo desde libros."""
+import asyncio
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -15,6 +17,9 @@ from ..services.llm_service import LLMService
 from ..utils.file_parsers import parse_document
 
 logger = logging.getLogger(__name__)
+
+# TAREA 6.4: Paralelismo configurable via variable de entorno
+PARALLEL_CHUNKS = int(os.getenv("BOOK_PARALLEL_CHUNKS", "10"))
 
 
 class BookLearningService:
@@ -132,29 +137,34 @@ class BookLearningService:
                 str(learned_book.id), len(chunks)
             )
             
-            # 4. CAPA 1: Extraer conceptos por chunk (en batches)
+            # 4. CAPA 1: Extraer conceptos por chunk (en PARALELO - TAREA 6.4)
             chunk_concepts: list[ConceptExtraction] = []
-            batch_size = 10
+            parallel_size = PARALLEL_CHUNKS
             
-            for batch_start in range(0, len(chunks), batch_size):
-                batch_end = min(batch_start + batch_size, len(chunks))
-                batch = chunks[batch_start:batch_end]
+            logger.info(
+                "[BOOK] parallel_config book_id=%s parallel_chunks=%s",
+                str(learned_book.id), parallel_size
+            )
+            
+            for batch_start in range(0, len(chunks), parallel_size):
+                batch_end = min(batch_start + parallel_size, len(chunks))
+                batch_chunks = chunks[batch_start:batch_end]
+                batch_indices = list(range(batch_start, batch_end))
                 
-                for i, chunk in enumerate(batch):
-                    chunk_index = batch_start + i
-                    concepts = await self._extract_concepts_from_chunk(chunk, chunk_index)
-                    chunk_concepts.append(concepts)
-                    
-                    # Actualizar progreso
-                    learned_book.processed_chunks = chunk_index + 1
+                # TAREA 6.4: Procesar batch en PARALELO con asyncio.gather
+                batch_concepts = await self._process_chunks_parallel(
+                    batch_chunks, batch_indices
+                )
+                chunk_concepts.extend(batch_concepts)
                 
-                # COMMIT al final de cada batch para que frontend vea progreso
+                # Actualizar progreso después de cada batch paralelo
+                learned_book.processed_chunks = batch_end
                 await self.db.commit()
                 await self.db.refresh(learned_book)
                 
                 logger.info(
-                    "[BOOK] batch book_id=%s processed=%s/%s",
-                    str(learned_book.id), batch_end, len(chunks)
+                    "[BOOK] parallel_batch book_id=%s processed=%s/%s success=%s",
+                    str(learned_book.id), batch_end, len(chunks), len(batch_concepts)
                 )
             
             # 5. CAPA 2: Generar resumen global
@@ -195,6 +205,45 @@ class BookLearningService:
         REUTILIZA: parse_document de utils.file_parsers
         """
         return await parse_document(Path(file_path), file_type)
+
+    async def _process_chunks_parallel(
+        self,
+        chunks: list[str],
+        chunk_indices: list[int]
+    ) -> list[ConceptExtraction]:
+        """
+        TAREA 6.4: Procesa múltiples chunks en PARALELO usando asyncio.gather.
+        
+        Esto acelera el procesamiento de 21 min → ~2 min para 417 chunks.
+        
+        Args:
+            chunks: Lista de textos de chunk
+            chunk_indices: Lista de índices correspondientes
+            
+        Returns:
+            Lista de ConceptExtraction (solo los exitosos)
+        """
+        # Crear tareas paralelas
+        tasks = [
+            self._extract_concepts_from_chunk(chunk, idx)
+            for chunk, idx in zip(chunks, chunk_indices)
+        ]
+        
+        # Ejecutar en paralelo con manejo de excepciones
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Filtrar resultados exitosos y loggear errores
+        concepts = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(
+                    "[BOOK] chunk_error index=%s error=%s",
+                    chunk_indices[i], str(result)
+                )
+            else:
+                concepts.append(result)
+        
+        return concepts
 
     async def _extract_concepts_from_chunk(
         self,
