@@ -63,7 +63,8 @@ class BookLearningService:
         project_id: UUID,
         title: str,
         author: Optional[str] = None,
-        file_type: Optional[str] = None
+        file_type: Optional[str] = None,
+        book_id: Optional[UUID] = None  # FIX: Aceptar book_id existente
     ) -> MarketingLearnedBook:
         """
         Pipeline completo de aprendizaje progresivo.
@@ -77,6 +78,7 @@ class BookLearningService:
             title: Título del libro
             author: Autor (opcional)
             file_type: Tipo de archivo (.pdf, .txt, .docx)
+            book_id: ID de libro existente (si ya se creó en el endpoint)
             
         Returns:
             MarketingLearnedBook con estado final
@@ -85,17 +87,27 @@ class BookLearningService:
         if not file_type:
             file_type = Path(file_path).suffix.lower()
         
-        # 1. Crear registro inicial
-        learned_book = MarketingLearnedBook(
-            project_id=project_id,
-            title=title,
-            author=author,
-            file_path=file_path,
-            file_type=file_type,
-            processing_status="processing"
-        )
-        self.db.add(learned_book)
-        await self.db.flush()  # Obtener ID
+        # 1. Obtener libro existente o crear nuevo
+        # FIX: Si book_id se proporciona, usar el registro existente
+        if book_id:
+            from sqlalchemy import select
+            stmt = select(MarketingLearnedBook).where(MarketingLearnedBook.id == book_id)
+            result = await self.db.execute(stmt)
+            learned_book = result.scalar_one_or_none()
+            if not learned_book:
+                raise ValueError(f"Book with ID {book_id} not found")
+        else:
+            # Crear registro (fallback para compatibilidad)
+            learned_book = MarketingLearnedBook(
+                project_id=project_id,
+                title=title,
+                author=author,
+                file_path=file_path,
+                file_type=file_type,
+                processing_status="processing"
+            )
+            self.db.add(learned_book)
+            await self.db.flush()  # Obtener ID
         
         logger.info(
             "[BOOK] start book_id=%s title=%s",
@@ -112,7 +124,8 @@ class BookLearningService:
             # 3. Chunking
             chunks = self.chunker.split_text(raw_text)
             learned_book.total_chunks = len(chunks)
-            await self.db.flush()
+            await self.db.commit()  # COMMIT para que sea visible al frontend
+            await self.db.refresh(learned_book)  # Refrescar objeto después de commit
             
             logger.info(
                 "[BOOK] chunks book_id=%s total=%s",
@@ -134,7 +147,10 @@ class BookLearningService:
                     
                     # Actualizar progreso
                     learned_book.processed_chunks = chunk_index + 1
-                    await self.db.flush()
+                
+                # COMMIT al final de cada batch para que frontend vea progreso
+                await self.db.commit()
+                await self.db.refresh(learned_book)
                 
                 logger.info(
                     "[BOOK] batch book_id=%s processed=%s/%s",

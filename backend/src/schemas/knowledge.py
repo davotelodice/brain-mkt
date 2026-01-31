@@ -50,10 +50,14 @@ class ThematicSummary(BaseModel):
 class BookProcessingStatus(BaseModel):
     """Estado de procesamiento de un libro."""
     id: UUID
-    status: str
+    status: str = Field(validation_alias="processing_status")  # Lee processing_status del ORM
     processed_chunks: int
     total_chunks: Optional[int] = None
     completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True
 
 
 class LearnedBookResponse(BaseModel):
@@ -61,7 +65,7 @@ class LearnedBookResponse(BaseModel):
     id: UUID
     title: str
     author: Optional[str] = None
-    status: str
+    status: str = Field(validation_alias="processing_status")  # Lee processing_status del ORM
     total_chunks: Optional[int] = None
     processed_chunks: int = 0
     created_at: datetime
@@ -69,6 +73,7 @@ class LearnedBookResponse(BaseModel):
 
     class Config:
         from_attributes = True
+        populate_by_name = True
 
 
 class LearnedBookCreate(BaseModel):

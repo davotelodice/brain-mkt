@@ -36,11 +36,13 @@ async def _process_book_background(
     file_path: str,
     project_id: UUID,
     title: str,
-    author: Optional[str] = None
+    author: Optional[str] = None,
+    book_id: Optional[UUID] = None  # FIX: Pasar book_id existente
 ) -> None:
     """Background task for book processing.
     
     GOTCHA: Background tasks need fresh service instances.
+    FIX: Ahora recibe book_id para reutilizar registro existente.
     """
     llm_service = LLMService()
     embedding_service = EmbeddingService()
@@ -51,7 +53,8 @@ async def _process_book_background(
             file_path=file_path,
             project_id=project_id,
             title=title,
-            author=author
+            author=author,
+            book_id=book_id  # FIX: Pasar book_id
         )
     finally:
         # Cleanup temp file
@@ -118,13 +121,15 @@ async def upload_book_for_learning(
     
     # 5. Add background task
     # PATRÓN: FastAPI BackgroundTasks - retorna inmediatamente
+    # FIX: Pasar book_id para reutilizar el registro creado
     background_tasks.add_task(
         _process_book_background,
         db=db,
         file_path=str(temp_file_path),
         project_id=user.project_id,
         title=title,
-        author=author
+        author=author,
+        book_id=learned_book.id  # FIX: Pasar el ID del libro creado
     )
     
     # Update status to processing
