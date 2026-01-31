@@ -253,61 +253,12 @@ class RouterAgent(BaseAgent):
             if debug_enabled and isinstance(result, dict) and result.get("debug"):
                 yield json.dumps({"type": "debug", "content": result["debug"]})
 
+            # TAREA 6.2: Simplificado - pasar texto Markdown directamente
             if result["success"]:
-                # Format content ideas nicely
-                ideas = result.get("content_ideas", [])
-                content_text_override = result.get("content_text", "") or ""
-
-                if ideas:
-                    has_scripts = any(
-                        isinstance(idea, dict) and (idea.get("guion") or idea.get("dialogo"))
-                        for idea in ideas
-                    )
-                    content_text = (
-                        "🎬 **Guiones/Diálogos Desarrollados:**\n\n"
-                        if has_scripts
-                        else "✨ **Ideas de Contenido Generadas:**\n\n"
-                    )
-
-                    for i, idea in enumerate(ideas[:10], 1):  # Max 10 ideas
-                        if isinstance(idea, dict):
-                            titulo = idea.get("titulo", f"Idea {i}")
-                            plataforma = idea.get("plataforma", "TikTok/Instagram")
-                            hook = idea.get("hook", "")
-                            estructura = idea.get("estructura", "")
-                            cta = idea.get("cta", "")
-                            guion = idea.get("guion", "") or idea.get("dialogo", "")
-                            tecnicas = idea.get("tecnicas_aplicadas", [])
-                            tecnicas_text = ""
-                            if isinstance(tecnicas, list) and len(tecnicas) > 0:
-                                tecnicas_text = f"\n🔧 **Técnicas aplicadas:** {', '.join(tecnicas)}\n"
-
-                            content_text += f"**{i}. {titulo}** ({plataforma})\n"
-                            if hook:
-                                content_text += f"🎣 Hook: {hook}\n"
-                            if estructura:
-                                content_text += f"📋 Estructura: {estructura}\n"
-                            if cta:
-                                content_text += f"📢 CTA: {cta}\n"
-                            if tecnicas_text:
-                                content_text += tecnicas_text
-                            if guion:
-                                content_text += f"🗣️ Guion/Diálogo:\n{guion}\n"
-                            content_text += "\n"
-                        else:
-                            # Fallback for non-dict ideas
-                            content_text += f"**{i}.** {str(idea)}\n\n"
-
-                    content_text += (
-                        "\n💡 Estos guiones/ideas están personalizados para tu buyer persona y usan técnicas probadas de contenido viral."
-                    )
-                else:
-                    # Consultivo (texto libre) o fallback
-                    content_text = (
-                        content_text_override
-                        if content_text_override.strip()
-                        else result.get("message", "✅ Contenido generado correctamente.")
-                    )
+                # El agente ahora retorna Markdown directo en content_text
+                content_text = result.get("content_text", "").strip()
+                if not content_text:
+                    content_text = result.get("message", "✅ Contenido generado correctamente.")
             else:
                 content_text = f"❌ {result.get('message', 'Error al generar contenido')}"
 

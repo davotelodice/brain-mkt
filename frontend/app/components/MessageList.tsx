@@ -1,6 +1,8 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { Message } from '@/lib/types'
 
 interface MessageListProps {
@@ -64,9 +66,45 @@ export function MessageList({ messages, isStreaming = false }: MessageListProps)
               {message.role === 'user' ? 'Tú' : '🧠 Asistente'}
             </div>
 
-            {/* Message content */}
-            <div className="whitespace-pre-wrap break-words">
-              {message.content}
+            {/* Message content - TAREA 6.2: Markdown para asistente */}
+            <div className="break-words">
+              {message.role === 'assistant' ? (
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    // Estilos para Markdown
+                    h1: ({ children }) => <h1 className="text-xl font-bold mt-4 mb-2">{children}</h1>,
+                    h2: ({ children }) => <h2 className="text-lg font-bold mt-3 mb-2">{children}</h2>,
+                    h3: ({ children }) => <h3 className="text-base font-semibold mt-2 mb-1">{children}</h3>,
+                    p: ({ children }) => <p className="mb-2">{children}</p>,
+                    ul: ({ children }) => <ul className="list-disc list-inside mb-2 ml-2">{children}</ul>,
+                    ol: ({ children }) => <ol className="list-decimal list-inside mb-2 ml-2">{children}</ol>,
+                    li: ({ children }) => <li className="mb-1">{children}</li>,
+                    strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+                    em: ({ children }) => <em className="italic">{children}</em>,
+                    blockquote: ({ children }) => (
+                      <blockquote className="border-l-4 border-gray-300 pl-3 my-2 italic text-gray-600">
+                        {children}
+                      </blockquote>
+                    ),
+                    code: ({ children, className }) => {
+                      const isInline = !className
+                      return isInline ? (
+                        <code className="bg-gray-100 text-gray-800 px-1 py-0.5 rounded text-sm">{children}</code>
+                      ) : (
+                        <code className="block bg-gray-100 text-gray-800 p-3 rounded my-2 text-sm overflow-x-auto">
+                          {children}
+                        </code>
+                      )
+                    },
+                    hr: () => <hr className="my-4 border-gray-200" />,
+                  }}
+                >
+                  {message.content}
+                </ReactMarkdown>
+              ) : (
+                <div className="whitespace-pre-wrap">{message.content}</div>
+              )}
             </div>
 
             {/* Timestamp */}

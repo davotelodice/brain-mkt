@@ -98,14 +98,14 @@ class ContentGeneratorAgent(BaseAgent):
                 logger.info("[PROMPT] system_preview=%s", sp[:1200])
 
         # 5. Format messages with full conversation history
-        # Si es follow-up, reforzamos la instrucción para que NO genere ideas nuevas.
+        # TAREA 6.2: Si es follow-up, reforzamos la instrucción (ya no menciona JSON)
         final_user_message = user_message
         if is_refine and requested_numbers:
             nums = ", ".join(str(n) for n in requested_numbers)
             final_user_message = (
                 f"{user_message}\n\n"
                 f"INSTRUCCIÓN: No generes ideas nuevas. Desarrolla SOLO las ideas #{nums} de tu respuesta anterior "
-                f"(guion/diálogo listo para grabar) y responde con JSON válido."
+                f"con guion/diálogo completo listo para grabar."
             )
 
         messages = self.memory.format_messages_from_memory(
@@ -137,17 +137,10 @@ class ContentGeneratorAgent(BaseAgent):
             response_preview = response[:500] if len(response) > 500 else response
             logger.info(f"LLM response preview: {response_preview}...")
 
-            content_ideas: list[dict[str, Any]] = []
-            content_text: str = ""
-            tecnicas_aplicadas_count: int = 0
-
-            if mode == "ideas_json":
-                # 7. Parse response (JSON ideas) and extract tecnicas_aplicadas
-                content_ideas, tecnicas_aplicadas_count = self._parse_content_response(response)
-                logger.info(f"Parsed {len(content_ideas)} content ideas with {tecnicas_aplicadas_count} técnicas aplicadas")
-            else:
-                # 7. Consultivo: texto libre (mantener conversación, auditoría, estrategia, etc.)
-                content_text = (response or "").strip()
+            # TAREA 6.2: Siempre texto Markdown directo (eliminado parsing JSON)
+            content_ideas: list[dict[str, Any]] = []  # Mantenido por compatibilidad
+            content_text: str = (response or "").strip()
+            tecnicas_aplicadas_count: int = 0  # Ya no se extrae de JSON
 
             debug: dict[str, Any] = {}
             if trace or os.getenv("SSE_DEBUG", "0") == "1":
@@ -195,15 +188,12 @@ class ContentGeneratorAgent(BaseAgent):
                     **prompt_debug,
                 }
 
+            # TAREA 6.2: Siempre retorna content_text (Markdown)
             return {
                 "success": True,
-                "content_ideas": content_ideas,
+                "content_ideas": content_ideas,  # Mantenido vacío por compatibilidad
                 "content_text": content_text,
-                "message": (
-                    f"✅ Generé {len(content_ideas)} ideas de contenido personalizadas."
-                    if mode == "ideas_json"
-                    else "✅ Respuesta generada."
-                ),
+                "message": "✅ Respuesta generada.",
                 "debug": debug,
             }
 
@@ -252,26 +242,14 @@ class ContentGeneratorAgent(BaseAgent):
 
     def _select_mode(self, message: str, is_refine: bool) -> str:
         """
-        Decide el modo de respuesta:
-        - ideas_json: cuando el usuario pide ideas/hook/ganchos en bulk.
-        - consultivo: auditoría, estrategia, preguntas, mejoras, follow-ups.
+        Decide el modo de respuesta.
+        
+        TAREA 6.2: Simplificado - siempre retorna 'markdown' para flexibilidad.
+        El modo ideas_json fue eliminado para permitir respuestas en Markdown puro.
         """
-        if is_refine:
-            return "consultivo"
-
-        text = (message or "").lower()
-        # Bulk ideas requests: "dame 5 ideas", "3 ganchos", "10 hooks", etc.
-        if re.search(r"\b\d{1,2}\b", text) and re.search(
-            r"\b(ideas?|ganchos?|hooks?|reels?|tiktoks?|shorts?|posts?)\b", text
-        ):
-            return "ideas_json"
-        if re.search(r"\b(dame|genera|crea|propon|sugi[eé]reme)\b", text) and re.search(
-            r"\b(ideas?|ganchos?|hooks?|reels?|tiktoks?|shorts?|posts?)\b", text
-        ):
-            return "ideas_json"
-
-        # Otherwise: consultivo/free-form
-        return "consultivo"
+        # TAREA 6.2: Siempre markdown para máxima flexibilidad
+        # Eliminado: lógica de ideas_json que forzaba estructura rígida
+        return "markdown"
 
     async def _build_system_prompt(
         self,
@@ -397,8 +375,8 @@ class ContentGeneratorAgent(BaseAgent):
         else:
             learned_concepts_text = "No hay conocimiento de libros procesados aún."
 
-        # --- Prompt base (consultivo) ---
-        base_consultivo = """## TU ROL Y CAPACIDADES:
+        # --- Prompt base (TAREA 6.2: unificado para Markdown) ---
+        base_prompt = """## TU ROL Y CAPACIDADES:
 
 Eres un estratega de marketing digital especializado en contenido para redes sociales.
 
@@ -414,47 +392,38 @@ PASO 4: Entregar valor (formato adecuado a la petición)
 ❌ evita genérico e ignorar contexto
 """
 
-        # --- Prompt base (JSON bulk ideas) ---
-        base_ideas_json = "Eres un experto en marketing digital especializado en crear contenido viral."
+        # TAREA 6.2: Formato unificado Markdown (eliminado JSON forzado)
+        format_section = """## FORMATO DE RESPUESTA (Markdown):
 
-        format_section = (
-            """CRÍTICO: Responde SOLO con JSON válido. No incluyas texto antes o después del JSON.
-No uses markdown.
+Responde en **Markdown estructurado**. Elige el formato más apropiado:
 
-Estructura requerida:
-{
-  "ideas": [
-    {
-      "titulo": "Título descriptivo",
-      "plataforma": "TikTok | Instagram | YouTube | Ambas",
-      "formato": "Reel | Carrusel | Historia | Post | Short",
-      "hook": "Primeras 3 segundos",
-      "estructura": "Desarrollo del contenido",
-      "cta": "Call-to-action específico",
-      "por_que_funciona": "Conexión técnica + buyer persona + pain point",
-      "guion": "(Opcional) Diálogo/texto completo",
-      "tecnicas_aplicadas": ["nombre_tecnica_1", "nombre_tecnica_2", ...]
-    }
-  ]
-}
+### Para ideas de contenido (si piden ideas/hooks/posts):
+Usa esta estructura para CADA idea:
 
-REGLAS:
-- mínimo 5 ideas
-- SOLO JSON
-- nada de texto extra
-- OBLIGATORIO: cada idea DEBE incluir "tecnicas_aplicadas" como array de strings
-- Las técnicas deben ser específicas y extraídas del entrenamiento (ej: "contraste", "metáfora_visual", "CTA_específico", "hook_emocional", "storytelling", etc.)
-- Si el usuario pide técnicas específicas, DEBES usarlas y reportarlas en tecnicas_aplicadas
+**1. [Título descriptivo]** (Plataforma)
+- 🎣 **Hook:** [Las primeras 3 segundos]
+- 📋 **Estructura:** [Desarrollo del contenido]
+- 📢 **CTA:** [Call-to-action específico]
+- 💡 **Por qué funciona:** [Conexión con buyer persona + técnicas usadas]
+- 🗣️ **Guion/Diálogo:** (si aplica)
+  > [Texto completo para grabar]
 
-RESPONDE AHORA CON EL JSON:"""
-            if mode == "ideas_json"
-            else """Responde en el formato más apropiado a la petición del cliente.
-NO fuerces JSON si no es necesario.
-Si el usuario pide desarrollar una idea, entrega guion completo + caption + recomendaciones.
+### Para otros tipos de petición:
+- Usa headers (##, ###) para organizar
+- Usa listas (-, 1.) para pasos o items
+- Usa **negritas** para énfasis
+- Usa > blockquotes para citas o ejemplos
+- Usa `código` para términos técnicos si aplica
+
+### REGLAS:
+- Sé específico y accionable (no genérico)
+- Siempre conecta con el buyer persona
+- Menciona las técnicas de entrenamiento que apliques
+- Genera contenido LISTO para usar
 """
-        )
 
-        system_prompt = f"""{base_ideas_json if mode == "ideas_json" else base_consultivo}
+        # TAREA 6.2: Prompt unificado sin condicionales de modo
+        system_prompt = f"""{base_prompt}
 
 ## TÉCNICAS DE ENTRENAMIENTO (de Andrea Estratega - experta en contenido viral):
 {training_summary}
@@ -485,8 +454,6 @@ Si el usuario pide desarrollar una idea, entrega guion completo + caption + reco
 - Sé específico y accionable (no genérico)
 - Genera contenido listo para usar (hooks, estructuras, CTAs)
 - Mantén conversación natural, recuerda contexto de mensajes anteriores
-
-## FORMATO DE RESPUESTA:
 
 {format_section}"""
 

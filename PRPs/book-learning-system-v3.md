@@ -968,6 +968,129 @@ class RAGService:
 
 ---
 
+### TAREA 6.1: Verificación Docker (COMPLETADA)
+
+**Objetivo:** Asegurar que los bind mounts de Docker reflejen cambios del frontend.
+
+**Archivos modificados:**
+- `docker-compose.yml` - Agregado bind mount `./frontend/lib:/app/lib:ro`
+
+**Estado:** ✅ COMPLETADA
+
+---
+
+### TAREA 6.2: Eliminar Formato JSON Forzado - Migrar a Markdown
+
+**Herramientas:**
+- 🔧 MCP Serena: Analizar content_generator_agent.py, router_agent.py
+- 📚 Skills: python-patterns, clean-code
+
+**Objetivo:** Eliminar la restricción de respuestas JSON y permitir respuestas en Markdown puro.
+
+**Diagnóstico COMPLETO con Serena (verificado):**
+
+```
+FLUJO ACTUAL:
+1. Usuario: "Dame 5 ideas de contenido"
+2. _select_mode() → detecta números + "ideas" → retorna "ideas_json"
+3. _build_system_prompt() → inyecta prompt que FUERZA JSON (líneas 399-449)
+   "CRÍTICO: Responde SOLO con JSON válido. No incluyas texto..."
+4. LLM → responde con JSON estructurado
+5. _parse_content_response() → parsea JSON a list[dict]
+6. process_stream() (router_agent líneas 255-300) → convierte JSON a texto con emojis
+7. Frontend → muestra texto con whitespace-pre-wrap (NO Markdown real)
+```
+
+**Archivos clave (líneas exactas verificadas con Serena):**
+
+| Archivo | Método | Líneas | Función |
+|---------|--------|--------|---------|
+| `content_generator_agent.py` | `_select_mode()` | 252-273 | Decide `ideas_json` vs `consultivo` |
+| `content_generator_agent.py` | `_build_system_prompt()` | 399-449 | Prompt que fuerza JSON |
+| `content_generator_agent.py` | `_parse_content_response()` | 494-612 | Parsea JSON del LLM |
+| `router_agent.py` | `process_stream()` | 255-300 | Formatea JSON → texto |
+| `MessageList.tsx` | - | 68 | `whitespace-pre-wrap` |
+
+**Pasos de implementación:**
+
+1. **Modificar `_select_mode()` (content_generator_agent.py:252-273):**
+   - Cambiar para SIEMPRE retornar `"consultivo"` (eliminar lógica de `ideas_json`)
+   - O renombrar a `"markdown"` para claridad
+
+2. **Modificar `_build_system_prompt()` (content_generator_agent.py:399-449):**
+   - Eliminar la sección que dice "CRÍTICO: Responde SOLO con JSON válido"
+   - Reemplazar con instrucciones de Markdown estructurado
+   - Agregar ejemplos few-shot si es necesario
+
+3. **Simplificar `process_stream()` (router_agent.py:255-300):**
+   - Eliminar lógica de conversión JSON → texto
+   - Pasar `content_text` directamente (ya existe para modo consultivo)
+
+4. **Eliminar `_parse_content_response()` (content_generator_agent.py:494-612):**
+   - Ya no se necesita si no parseamos JSON
+   - O mantener como fallback por si LLM genera JSON
+
+5. **Actualizar Frontend:**
+   - Instalar `react-markdown` y `remark-gfm`
+   - Modificar `MessageList.tsx` para renderizar Markdown
+
+**Archivos a modificar:**
+- `backend/src/agents/content_generator_agent.py`
+- `backend/src/agents/router_agent.py`
+- `frontend/app/components/MessageList.tsx`
+- `frontend/package.json` (agregar react-markdown, remark-gfm)
+
+**Criterios de aceptación:**
+- [ ] `_select_mode()` ya no retorna `ideas_json`
+- [ ] Prompt permite respuestas en Markdown libre
+- [ ] `process_stream()` pasa texto directamente
+- [ ] Frontend renderiza Markdown (headers, listas, negritas, código)
+- [ ] Funcionalidad existente NO se rompe
+
+**Riesgos y mitigaciones:**
+- ⚠️ Respuestas menos estructuradas → Mitigar con prompt engineering
+- ⚠️ Debug info perdida → Mantener `tecnicas_aplicadas` en prompt pero no forzar JSON
+
+---
+
+### TAREA 6.3: Eliminar Auto-Creación de Chats Vacíos
+
+**Herramientas:**
+- 📚 Skills: react-patterns, nextjs-best-practices
+
+**Objetivo:** Que el chat se cree SOLO cuando el usuario envía el primer mensaje (como ChatGPT).
+
+**Diagnóstico del problema:**
+- `ChatPageContent.tsx` líneas 27-38 crea chat automáticamente si no hay `chatIdFromUrl`
+- Cada refresh/entrada crea chat vacío = basura en DB
+
+**Pasos:**
+
+1. **Modificar ChatPageContent:**
+   - NO crear chat automáticamente
+   - Si no hay `chatId`, mostrar estado de "bienvenida"
+
+2. **Modificar ChatInterface:**
+   - Si no hay `chatId`, crear chat al enviar primer mensaje
+   - Después de crear, actualizar URL y continuar
+
+3. **Actualizar Sidebar:**
+   - Reflejar nuevo chat en lista después de creación
+
+**Archivos a modificar:**
+- `frontend/app/components/ChatPageContent.tsx`
+- `frontend/app/components/ChatInterface.tsx`
+- `frontend/app/components/Sidebar.tsx` (posiblemente)
+
+**Criterios de aceptación:**
+- [ ] Entrar a `/` NO crea chat automáticamente
+- [ ] Chat se crea SOLO al enviar primer mensaje
+- [ ] URL se actualiza con nuevo chatId
+- [ ] Lista de chats se actualiza en sidebar
+- [ ] No más chats vacíos en base de datos
+
+---
+
 ### TAREA 7: Testing y Documentación
 
 **Herramientas:**
