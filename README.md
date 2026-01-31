@@ -22,7 +22,8 @@ Un sistema inteligente que:
 |----------------|-------------|
 | 🤖 **Agente IA Multi-Especializado** | 7 agentes (Router, Buyer Persona, Forum Simulator, Pain Points, Customer Journey, Content Generator, Document Processor) |
 | 🧠 **Memoria Triple** | Short-term (10 últimos mensajes), Long-term (DB completa), Semantic (búsqueda vectorial) |
-| 📚 **RAG con Conocimiento Experto** | Base de datos con transcripciones de YouTubers y libros de marketing |
+| 📚 **RAG con Conocimiento Experto** | Transcripciones de YouTubers + RAG tradicional |
+| 📖 **Aprendizaje Progresivo de Libros** | **🆕** Extrae conceptos estructurados (no solo chunks) de libros de marketing |
 | 📄 **Upload de Documentos** | Sube archivos `.txt`, `.pdf`, `.docx` con info de tu negocio |
 | ⏸️ **No Genera Automáticamente** | Usuario controla cuándo generar contenido (no spam) |
 | 🔒 **Multi-Tenancy Estricto** | Aislamiento total por `project_id` |
@@ -321,6 +322,164 @@ class MemoryManager:
     """
 ```
 
+### 📚 Sistema de Aprendizaje Progresivo de Libros
+
+El sistema incluye un pipeline avanzado para aprender de libros y documentos largos. A diferencia de un RAG tradicional que solo guarda chunks de texto, este sistema **extrae conocimiento estructurado**.
+
+#### ¿Por qué tarda en procesar un libro?
+
+| Sistema | Pipeline | Velocidad |
+|---------|----------|-----------|
+| **RAG tradicional** | Chunk → Embed → Guardar | ⚡ Segundos |
+| **Nuestro sistema** | Chunk → **LLM extrae conceptos** → Embed → Guardar | 🐢 Minutos |
+
+Cada chunk del libro pasa por un LLM que extrae:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    POR CADA CHUNK SE EXTRAE:                    │
+├─────────────────────────────────────────────────────────────────┤
+│ main_concepts     │ Conceptos principales (máx 5)               │
+│                   │ Ej: ["Hook", "Dream 100", "Traffic Funnel"] │
+├───────────────────┼─────────────────────────────────────────────┤
+│ relationships     │ Relaciones entre conceptos                  │
+│                   │ Ej: ["Hook captura atención → Funnel        │
+│                   │      convierte", "Dream 100 genera Warm     │
+│                   │      Traffic"]                              │
+├───────────────────┼─────────────────────────────────────────────┤
+│ key_examples      │ Ejemplos concretos del libro                │
+│                   │ Ej: ["Russell contactó 100 influencers      │
+│                   │      para su primer lanzamiento"]           │
+├───────────────────┼─────────────────────────────────────────────┤
+│ technical_terms   │ Términos técnicos con definiciones          │
+│                   │ Ej: {"Dream 100": "Lista de 100 personas    │
+│                   │      que ya tienen tu audiencia ideal"}     │
+├───────────────────┼─────────────────────────────────────────────┤
+│ condensed_text    │ Resumen condensado del chunk (máx 2000      │
+│                   │ chars) optimizado para embedding            │
+└───────────────────┴─────────────────────────────────────────────┘
+```
+
+#### ¿Por qué es mejor que RAG tradicional?
+
+| RAG Tradicional | Nuestro Sistema |
+|-----------------|-----------------|
+| Guarda texto crudo | Guarda **conocimiento estructurado** |
+| LLM debe "entender" el chunk | LLM recibe conceptos **pre-digeridos** |
+| Busca por similitud de texto | Busca por similitud de **conceptos** |
+| Puede ignorar info importante | Conceptos clave ya están extraídos |
+
+#### Flujo de procesamiento de un libro:
+
+```
+1. UPLOAD
+   Usuario sube PDF/TXT/DOCX en "Libros Aprendidos"
+   
+2. CHUNKING  
+   RecursiveCharacterTextSplitter (1500 chars, 200 overlap)
+   
+3. EXTRACCIÓN DE CONCEPTOS (por cada chunk)
+   LLM extrae: main_concepts, relationships, key_examples, 
+              technical_terms, condensed_text
+   
+4. EMBEDDINGS
+   OpenAI text-embedding-3-small genera vector de condensed_text
+   
+5. ALMACENAMIENTO
+   - marketing_learned_books: Metadatos + global_summary
+   - marketing_book_concepts: Conceptos por chunk con embeddings
+   
+6. GLOBAL SUMMARY
+   LLM genera resumen ejecutivo del libro completo
+```
+
+#### Cómo se aplica en las conversaciones:
+
+```
+Usuario pregunta: "Dame ideas de hooks para TikTok"
+                           ↓
+┌──────────────────────────────────────────────────────────────┐
+│ Búsqueda semántica en marketing_book_concepts                │
+│ → Encuentra conceptos relevantes por embedding               │
+└──────────────────────────────────────────────────────────────┘
+                           ↓
+┌──────────────────────────────────────────────────────────────┐
+│ Se inyecta en el System Prompt:                              │
+│                                                              │
+│ ## CONOCIMIENTO APRENDIDO DE LIBROS:                         │
+│                                                              │
+│ 📚 DE 'Traffic Secrets - Russell Brunson':                   │
+│   Conceptos: Hook, Pattern Interrupt, Dream 100              │
+│   Resumen: El hook debe capturar atención en 3 segundos...   │
+│   Términos: Hook: Primera frase que detiene el scroll        │
+│                                                              │
+│ 📚 DE 'Expert Secrets':                                      │
+│   Conceptos: Story Selling, Origin Story, Epiphany Bridge    │
+│   Resumen: Las historias venden mejor que los argumentos...  │
+└──────────────────────────────────────────────────────────────┘
+                           ↓
+              LLM genera respuesta usando ese conocimiento
+```
+
+#### Tablas de la base de datos:
+
+```sql
+-- Metadatos de libros procesados
+CREATE TABLE marketing_learned_books (
+    id UUID PRIMARY KEY,
+    project_id UUID NOT NULL,
+    title VARCHAR(500) NOT NULL,
+    author VARCHAR(255),
+    processing_status VARCHAR(50),  -- pending/processing/completed/failed
+    total_chunks INTEGER,
+    processed_chunks INTEGER,
+    global_summary JSONB,           -- Resumen ejecutivo del libro
+    created_at TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+-- Conceptos extraídos por chunk
+CREATE TABLE marketing_book_concepts (
+    id UUID PRIMARY KEY,
+    learned_book_id UUID REFERENCES marketing_learned_books(id),
+    chunk_index INTEGER NOT NULL,
+    main_concepts TEXT[],           -- Array de conceptos
+    relationships TEXT[],           -- Array de relaciones
+    key_examples TEXT[],            -- Array de ejemplos
+    technical_terms JSONB,          -- {término: definición}
+    condensed_text TEXT,            -- Resumen para embedding
+    embedding VECTOR(1536),         -- Vector OpenAI
+    created_at TIMESTAMP
+);
+```
+
+#### Tiempo estimado de procesamiento:
+
+| Tamaño del libro | Chunks aprox. | Tiempo estimado |
+|------------------|---------------|-----------------|
+| 50 páginas | ~50 chunks | 3-5 minutos |
+| 200 páginas | ~200 chunks | 10-15 minutos |
+| 400+ páginas | ~400+ chunks | 20-30 minutos |
+
+> **Nota**: Cada chunk requiere una llamada al LLM para extraer conceptos. El procesamiento es en batches de 10 chunks para evitar rate limits.
+
+#### Verificar progreso de un libro:
+
+```bash
+# Ver estado en la base de datos
+docker run --rm postgres:15-alpine psql "$SUPABASE_DB_URL" -c "
+SELECT title, processing_status, processed_chunks, total_chunks 
+FROM marketing_learned_books 
+ORDER BY created_at DESC;
+"
+
+# Ver logs de procesamiento
+docker logs marketing-brain-backend 2>&1 | grep "\[BOOK\]"
+# Output: [BOOK] batch book_id=xxx processed=50/200
+```
+
+---
+
 ### 📊 Base de Datos
 
 **Tablas principales:**
@@ -329,8 +488,10 @@ class MemoryManager:
 - `marketing_chats`: Conversaciones
 - `marketing_messages`: Mensajes individuales
 - `marketing_buyer_personas`: Buyer personas generados
-- `marketing_knowledge_base`: Base de conocimiento vectorial
+- `marketing_knowledge_base`: Base de conocimiento vectorial (RAG tradicional)
 - `marketing_user_documents`: Documentos subidos
+- `marketing_learned_books`: **🆕** Libros procesados (metadatos + resumen global)
+- `marketing_book_concepts`: **🆕** Conceptos estructurados extraídos de libros
 
 **Índices críticos:**
 - HNSW en `embedding` columns (NO ivfflat con <1000 docs)
@@ -473,8 +634,17 @@ Más soluciones: `docs/gotchas-detallados-y-soluciones.md`
 - [x] Documentación completa (README actualizado)
 - [ ] Testing end-to-end (skeletons pendientes)
 
-### 🔮 Fase 4 - Futuras Mejoras (Planeado)
+### ✅ Fase 4 - Aprendizaje Progresivo (Completado)
+- [x] Sistema de procesamiento de libros (PDF, TXT, DOCX)
+- [x] Extracción de conceptos estructurados con LLM
+- [x] Almacenamiento de main_concepts, relationships, key_examples
+- [x] Integración de conocimiento de libros en respuestas del agente
+- [x] UI para gestión de libros aprendidos
+- [x] Respuestas en Markdown (eliminado formato JSON forzado)
+
+### 🔮 Fase 5 - Futuras Mejoras (Planeado)
 - [ ] Cache Redis para training_summary
+- [ ] Procesamiento paralelo de chunks (acelerar 4x)
 - [ ] Generación de contenido via MCP
 - [ ] Dashboard de analytics
 - [ ] Exportación de contenido
@@ -517,5 +687,5 @@ MIT License - Ver `LICENSE` para detalles
 
 ---
 
-**Última actualización**: 2026-01-30  
-**Versión**: 2.0.0 (Production Ready)
+**Última actualización**: 2026-01-31  
+**Versión**: 3.0.0 (Progressive Learning System)

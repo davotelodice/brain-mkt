@@ -4,12 +4,13 @@
 
 ```yaml
 nombre: "Book Learning System"
-version: "3.0.0"
-fecha: "2026-01-30"
+version: "3.1.0"
+fecha: "2026-01-31"
 descripcion: "Sistema de aprendizaje progresivo que permite al agente 'estudiar' libros completos"
 tipo: "Feature Addition"
 proyecto_base: "Marketing Second Brain (EXISTENTE)"
 score_confianza: "9/10"
+ultima_actualizacion: "Añadida TAREA 6.4 - Optimización de rendimiento (paralelo + Docker)"
 ```
 
 ---
@@ -1091,6 +1092,217 @@ FLUJO ACTUAL:
 
 ---
 
+### TAREA 6.4: Optimización de Rendimiento - Procesamiento Paralelo y Recursos Docker
+
+**Herramientas:**
+- 📚 Skills: docker-expert, python-patterns, nodejs-best-practices
+
+**Objetivo:** Acelerar el procesamiento de libros de ~20min a ~2min mediante paralelismo, y configurar límites de recursos Docker para estabilidad.
+
+**Contexto técnico:**
+```yaml
+Rate Limits actuales:
+  OPENAI_RATE_LIMIT_RPM: 3000  # 3000 peticiones/minuto
+  Modelo: gpt-4o
+  
+Benchmark actual (417 chunks - Traffic Secrets):
+  Tiempo: ~21 minutos
+  Método: Secuencial (1 chunk a la vez)
+  
+Objetivo con paralelismo (10 chunks):
+  Tiempo estimado: ~2 minutos
+  Speedup: 10x
+```
+
+**PARTE A: Procesamiento Paralelo de Chunks**
+
+**Archivos a modificar:**
+- `backend/src/services/book_learning_service.py`
+
+**Pasos:**
+
+1. **Agregar configuración de paralelismo:**
+   ```python
+   # En __init__ o como constante
+   PARALLEL_CHUNKS = int(os.getenv("BOOK_PARALLEL_CHUNKS", "10"))
+   ```
+
+2. **Modificar process_book para usar asyncio.gather:**
+   ```python
+   import asyncio
+   from typing import List
+   
+   async def _process_chunk_batch_parallel(
+       self,
+       chunks: List[str],
+       chunk_indices: List[int],
+       learned_book: MarketingLearnedBook
+   ) -> List[MarketingBookConcept]:
+       """Procesa múltiples chunks en paralelo."""
+       tasks = [
+           self._extract_and_store_concept(chunk, idx, learned_book)
+           for chunk, idx in zip(chunks, chunk_indices)
+       ]
+       results = await asyncio.gather(*tasks, return_exceptions=True)
+       
+       # Filtrar errores y loggear
+       concepts = []
+       for i, result in enumerate(results):
+           if isinstance(result, Exception):
+               logger.error(f"Error en chunk {chunk_indices[i]}: {result}")
+           else:
+               concepts.append(result)
+       return concepts
+   
+   async def _extract_and_store_concept(
+       self,
+       chunk: str,
+       chunk_index: int,
+       learned_book: MarketingLearnedBook
+   ) -> MarketingBookConcept:
+       """Extrae conceptos de un chunk y lo almacena."""
+       concepts = await self._extract_concepts_from_chunk(chunk)
+       embedding = await self.embedding_service.get_embedding(concepts.condensed_text)
+       
+       concept = MarketingBookConcept(
+           learned_book_id=learned_book.id,
+           chunk_index=chunk_index,
+           original_text=chunk,
+           main_concepts=concepts.main_concepts,
+           relationships=concepts.relationships,
+           key_examples=concepts.key_examples,
+           technical_terms=concepts.technical_terms,
+           condensed_text=concepts.condensed_text,
+           embedding=embedding
+       )
+       self.db.add(concept)
+       return concept
+   ```
+
+3. **Actualizar bucle principal en process_book:**
+   ```python
+   # ANTES (secuencial):
+   for batch_start in range(0, len(chunks), batch_size):
+       batch = chunks[batch_start:batch_start + batch_size]
+       for i, chunk in enumerate(batch):
+           # procesar uno por uno...
+   
+   # DESPUÉS (paralelo):
+   parallel_size = int(os.getenv("BOOK_PARALLEL_CHUNKS", "10"))
+   for batch_start in range(0, len(chunks), parallel_size):
+       batch_end = min(batch_start + parallel_size, len(chunks))
+       batch_chunks = chunks[batch_start:batch_end]
+       batch_indices = list(range(batch_start, batch_end))
+       
+       concepts = await self._process_chunk_batch_parallel(
+           batch_chunks, batch_indices, learned_book
+       )
+       
+       learned_book.processed_chunks = batch_end
+       await self.db.commit()
+       await self.db.refresh(learned_book)
+       
+       logger.info(f"BOOK: Batch {batch_start}-{batch_end} completado ({len(concepts)} conceptos)")
+   ```
+
+4. **Agregar variable de entorno:**
+   - En `docker-compose.yml` añadir:
+   ```yaml
+   backend:
+     environment:
+       - BOOK_PARALLEL_CHUNKS=10
+   ```
+
+**PARTE B: Configuración de Recursos Docker**
+
+**Archivos a modificar:**
+- `docker-compose.yml`
+
+**Configuración recomendada:**
+```yaml
+services:
+  backend:
+    # ... configuración existente ...
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'      # Máximo 2 CPUs
+          memory: 2G       # Máximo 2GB RAM
+        reservations:
+          cpus: '1.0'      # Mínimo garantizado 1 CPU
+          memory: 1G       # Mínimo garantizado 1GB RAM
+    
+  frontend:
+    # ... configuración existente ...
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'      # Máximo 0.5 CPU
+          memory: 512M     # Máximo 512MB RAM
+        reservations:
+          cpus: '0.25'     # Mínimo garantizado 0.25 CPU
+          memory: 256M     # Mínimo garantizado 256MB RAM
+    
+  db:
+    # ... configuración existente ...
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'      # Máximo 1 CPU
+          memory: 1G       # Máximo 1GB RAM
+        reservations:
+          cpus: '0.5'      # Mínimo garantizado 0.5 CPU
+          memory: 512M     # Mínimo garantizado 512MB RAM
+```
+
+**Notas importantes:**
+- `limits`: Máximo que puede usar el contenedor
+- `reservations`: Mínimo garantizado (Docker no iniciará si no hay recursos)
+- El backend recibe más recursos porque hace el procesamiento de LLM
+- Frontend es ligero (solo sirve archivos estáticos)
+- En producción, ajustar según recursos del servidor
+
+**PARTE C: Monitoreo de Recursos (Opcional)**
+
+**Comando para verificar uso:**
+```bash
+# Ver uso de recursos en tiempo real
+docker stats
+
+# Ver uso específico durante procesamiento de libro
+watch -n 1 'docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"'
+```
+
+**Criterios de aceptación:**
+- [ ] Procesamiento de 417 chunks en < 3 minutos
+- [ ] Sin errores de rate limit
+- [ ] docker-compose.yml con límites de recursos
+- [ ] Variable BOOK_PARALLEL_CHUNKS configurable
+- [ ] Logs muestran progreso de batches paralelos
+- [ ] Sistema estable bajo carga
+
+**Comandos de validación:**
+```bash
+# Nivel 1: Verificar configuración
+docker compose config | grep -A5 "resources"
+
+# Nivel 2: Verificar variables de entorno
+docker exec marketing-brain-backend env | grep PARALLEL
+
+# Nivel 3: Test de rendimiento
+# Subir libro de prueba y medir tiempo
+
+# Nivel 4: Monitorear recursos durante procesamiento
+docker stats --no-stream
+```
+
+**Riesgos y mitigaciones:**
+- ⚠️ Rate limit excedido → Mitigar con PARALLEL_CHUNKS=10 (conservador)
+- ⚠️ Memoria insuficiente → Mitigar con reservations en Docker
+- ⚠️ Errores parciales en batch → Mitigar con return_exceptions=True y logging
+
+---
+
 ### TAREA 7: Testing y Documentación
 
 **Herramientas:**
@@ -1202,16 +1414,19 @@ Justificación:
 
 ## 🎯 RESUMEN EJECUTIVO
 
-| Tarea | Archivos a Crear | Archivos a Modificar | Prioridad |
-|-------|------------------|----------------------|-----------|
-| T0: Análisis | docs/INTEGRATION_ANALYSIS.md | - | ⚡ CRÍTICA |
-| T1: DB | db/003_*.sql | db/models.py | Alta |
-| T2: Service | services/book_learning_service.py, schemas/knowledge.py | - | Alta |
-| T3: API | api/knowledge.py | main.py | Alta |
-| T4: RAG | - | services/rag_service.py | Media |
-| T5: Agents | - | memory_manager.py, content_generator_agent.py | Media |
-| T6: Frontend | 4 componentes, 1 página | Sidebar.tsx, api-chat.ts | Media |
-| T7: Tests | tests/*.py, docs/*.md | README.md | Baja |
+| Tarea | Archivos a Crear | Archivos a Modificar | Prioridad | Estado |
+|-------|------------------|----------------------|-----------|--------|
+| T0: Análisis | docs/INTEGRATION_ANALYSIS.md | - | ⚡ CRÍTICA | ✅ |
+| T1: DB | db/003_*.sql | db/models.py | Alta | ✅ |
+| T2: Service | services/book_learning_service.py, schemas/knowledge.py | - | Alta | ✅ |
+| T3: API | api/knowledge.py | main.py | Alta | ✅ |
+| T4: RAG | - | services/rag_service.py | Media | ✅ |
+| T5: Agents | - | memory_manager.py, content_generator_agent.py | Media | ✅ |
+| T6.1: Docker | - | docker-compose.yml | Alta | ✅ |
+| T6.2: Markdown | - | content_generator_agent.py | Alta | ✅ |
+| T6.3: Chats vacíos | - | ChatPageContent.tsx, ChatInterface.tsx | Media | ⏳ |
+| T6.4: Optimización | - | book_learning_service.py, docker-compose.yml | Alta | ⏳ |
+| T7: Tests | tests/*.py, docs/*.md | README.md | Baja | ⏳ |
 
 **⚠️ ADVERTENCIAS CRÍTICAS:**
 - `LLMService.generate_with_messages()` YA EXISTE - NO recrear
