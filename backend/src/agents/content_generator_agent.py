@@ -31,6 +31,7 @@ class ContentGeneratorAgent(BaseAgent):
         project_id: UUID,
         user_message: str,
         context_override: dict | None = None,
+        model: str | None = None,
     ) -> dict:
         """
         Generate content ideas based on buyer persona and RAG techniques.
@@ -130,7 +131,8 @@ class ContentGeneratorAgent(BaseAgent):
             response = await self.llm.generate_with_messages(
                 messages=messages,
                 max_tokens=max_tokens,
-                temperature=0.8
+                temperature=0.8,
+                model=model,
             )
 
             # Log response for debugging (truncate if too long)
@@ -170,7 +172,7 @@ class ContentGeneratorAgent(BaseAgent):
                 # Count learned concepts from books
                 learned_concepts = context.get("learned_concepts", []) or []
                 learned_concepts_count = len(learned_concepts)
-                
+
                 debug = {
                     "stage": "content_generation",
                     "mode": mode,
@@ -249,7 +251,7 @@ class ContentGeneratorAgent(BaseAgent):
     def _select_mode(self, message: str, is_refine: bool) -> str:
         """
         Decide el modo de respuesta.
-        
+
         TAREA 6.2: Simplificado - siempre retorna 'markdown' para flexibilidad.
         El modo ideas_json fue eliminado para permitir respuestas en Markdown puro.
         """
@@ -371,7 +373,7 @@ class ContentGeneratorAgent(BaseAgent):
                 main_concepts = concept.get('main_concepts', [])
                 condensed = concept.get('condensed_text', '')[:500]  # Aumentado de 400 a 500
                 terms = concept.get('technical_terms', {})
-                
+
                 learned_concepts_text += f"\n📚 [{i}] DE '{book_title}':"
                 if main_concepts:
                     learned_concepts_text += f"\n   🎯 TÉCNICAS A APLICAR: {', '.join(main_concepts[:5])}"

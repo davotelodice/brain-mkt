@@ -25,6 +25,7 @@ class UpdateChatTitleRequest(BaseModel):
 class SendMessageRequest(BaseModel):
     """Send message request."""
     content: str = Field(..., min_length=1, max_length=5000, description="Message content")
+    model: str | None = Field(None, description="LLM model override (e.g., 'gpt-4o-mini')")
 
 
 class Message(BaseModel):

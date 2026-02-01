@@ -147,7 +147,8 @@ class RouterAgent(BaseAgent):
         self,
         chat_id: UUID,
         project_id: UUID,
-        user_message: str
+        user_message: str,
+        model: str | None = None,
     ):  # type: ignore[return]
         """
         Process message and stream response in real-time.
@@ -248,6 +249,7 @@ class RouterAgent(BaseAgent):
                 project_id,
                 user_message,
                 context_override=context,
+                model=model,
             )
 
             if debug_enabled and isinstance(result, dict) and result.get("debug"):

@@ -290,7 +290,8 @@ async def stream_message(
             async for chunk_json in router_agent.process_stream(
                 chat_id=chat_id,
                 project_id=user.project_id,
-                user_message=request.content
+                user_message=request.content,
+                model=request.model,
             ):
                 # Parse to accumulate final content
                 try:
