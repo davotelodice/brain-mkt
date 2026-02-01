@@ -361,23 +361,25 @@ class ContentGeneratorAgent(BaseAgent):
             user_docs_text = "No hay documentos adicionales."
 
         # 7. TAREA 5: Format learned concepts from books
+        # MEJORADO: Presentación más clara y enfática para que el LLM las use
         learned_concepts = context.get("learned_concepts", [])
         learned_concepts_text = ""
         if learned_concepts:
-            for concept in learned_concepts[:3]:  # Limit to top 3
+            learned_concepts_text = "\n⚠️ IMPORTANTE: DEBES aplicar estas técnicas en tu respuesta:\n"
+            for i, concept in enumerate(learned_concepts[:5], 1):  # Aumentado a 5
                 book_title = concept.get('book_title', 'Libro')
                 main_concepts = concept.get('main_concepts', [])
-                condensed = concept.get('condensed_text', '')[:400]
+                condensed = concept.get('condensed_text', '')[:500]  # Aumentado de 400 a 500
                 terms = concept.get('technical_terms', {})
                 
-                learned_concepts_text += f"\n\n📚 DE '{book_title}':"
+                learned_concepts_text += f"\n📚 [{i}] DE '{book_title}':"
                 if main_concepts:
-                    learned_concepts_text += f"\n  Conceptos: {', '.join(main_concepts[:5])}"
+                    learned_concepts_text += f"\n   🎯 TÉCNICAS A APLICAR: {', '.join(main_concepts[:5])}"
                 if condensed:
-                    learned_concepts_text += f"\n  Resumen: {condensed}"
+                    learned_concepts_text += f"\n   📝 Contexto: {condensed}"
                 if terms:
-                    terms_str = "; ".join(f"{k}: {v}" for k, v in list(terms.items())[:3])
-                    learned_concepts_text += f"\n  Términos: {terms_str}"
+                    terms_str = "; ".join(f"**{k}**: {v}" for k, v in list(terms.items())[:4])
+                    learned_concepts_text += f"\n   📖 Definiciones: {terms_str}"
         else:
             learned_concepts_text = "No hay conocimiento de libros procesados aún."
 
@@ -398,7 +400,7 @@ PASO 4: Entregar valor (formato adecuado a la petición)
 ❌ evita genérico e ignorar contexto
 """
 
-        # TAREA 6.2: Formato unificado Markdown (eliminado JSON forzado)
+        # TAREA 6.2: Formato unificado Markdown
         format_section = """## FORMATO DE RESPUESTA (Markdown):
 
 Responde en **Markdown estructurado**. Elige el formato más apropiado:
@@ -407,25 +409,19 @@ Responde en **Markdown estructurado**. Elige el formato más apropiado:
 Usa esta estructura para CADA idea:
 
 **1. [Título descriptivo]** (Plataforma)
-- 🎣 **Hook:** [Las primeras 3 segundos]
+- 🎣 **Hook:** [Aplica técnicas del CONOCIMIENTO DE LIBROS proporcionado arriba]
 - 📋 **Estructura:** [Desarrollo del contenido]
 - 📢 **CTA:** [Call-to-action específico]
-- 💡 **Por qué funciona:** [Conexión con buyer persona + técnicas usadas]
-- 🗣️ **Guion/Diálogo:** (si aplica)
-  > [Texto completo para grabar]
-
-### Para otros tipos de petición:
-- Usa headers (##, ###) para organizar
-- Usa listas (-, 1.) para pasos o items
-- Usa **negritas** para énfasis
-- Usa > blockquotes para citas o ejemplos
-- Usa `código` para términos técnicos si aplica
+- 💡 **Técnica aplicada:** [NOMBRA la técnica específica Y el libro de donde viene]
+- 🗣️ **Guion/Diálogo completo:**
+  > [Texto completo listo para grabar]
 
 ### REGLAS:
-- Sé específico y accionable (no genérico)
-- Siempre conecta con el buyer persona
-- Menciona las técnicas de entrenamiento que apliques
-- Genera contenido LISTO para usar
+1. USA las técnicas del CONOCIMIENTO DE LIBROS proporcionado arriba
+2. NOMBRA la técnica y el libro de donde viene
+3. CONECTA con el buyer persona y sus pain points
+4. SÉ ESPECÍFICO - evita respuestas genéricas
+5. Incluye guion completo listo para usar
 """
 
         # TAREA 6.2: Prompt unificado sin condicionales de modo
@@ -454,12 +450,12 @@ Usa esta estructura para CADA idea:
 
 ## TU ESTILO Y ENFOQUE:
 
-- Usa las técnicas probadas de arriba en TODO tu contenido
-- Adapta técnicas al buyer persona específico (lenguaje, problemas, mentalidad)
-- Considera la fase del customer journey (awareness/consideration/purchase)
-- Sé específico y accionable (no genérico)
-- Genera contenido listo para usar (hooks, estructuras, CTAs)
-- Mantén conversación natural, recuerda contexto de mensajes anteriores
+- APLICA las técnicas del CONOCIMIENTO DE LIBROS proporcionado arriba
+- NOMBRA la técnica y su libro de origen cuando la uses
+- ADAPTA al buyer persona (usa su lenguaje, menciona sus problemas)
+- GENERA contenido completo y accionable
+- Sé específico, evita respuestas genéricas
+- Mantén conversación natural, recuerda contexto previo
 
 {format_section}"""
 
