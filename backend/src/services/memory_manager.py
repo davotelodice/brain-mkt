@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import MarketingBuyerPersona, MarketingMessage
 from .llm_service import LLMService
+from .query_decomposer import QueryDecomposer
 from .rag_service import RAGService
+from .result_combiner import ResultCombiner
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,13 @@ class MemoryManager:
         self._loaded_chats: set[UUID] = set()
         # Cache (in-memory) for training summaries (TTL seconds)
         self._training_summary_cache: dict[str, tuple[str, float]] = {}
+
+        # Query Decomposition components
+        if llm_service:
+            self.query_decomposer = QueryDecomposer(llm_service)
+        else:
+            self.query_decomposer = None
+        self.result_combiner = ResultCombiner()
 
     def _get_short_term(self, chat_id: UUID) -> ConversationBufferWindowMemory:
         if chat_id not in self._short_term_by_chat:
@@ -113,21 +122,62 @@ class MemoryManager:
         # PATRÓN: Similar to how we get relevant_docs above
         # FIX: Bajado threshold de 0.65 a 0.35 porque embeddings de conceptos
         #      tienen menor similitud que texto completo
+        # ================================================================
+        # QUERY DECOMPOSITION: Búsqueda diversificada de conceptos
+        # ================================================================
         learned_concepts: list[dict] = []
-        if current_message:
+
+        if current_message and self.query_decomposer:
+            try:
+                # PASO 1: Generar sub-queries con método socrático
+                sub_queries = await self.query_decomposer.decompose(
+                    user_query=current_message,
+                    buyer_persona=buyer_persona,
+                    num_queries=4
+                )
+
+                logger.info(
+                    "[MEMORY] Query Decomposition: original='%s' sub_queries=%s",
+                    current_message[:50], sub_queries
+                )
+
+                # PASO 2: Buscar con cada sub-query en paralelo
+                raw_results = await self.rag_service.search_learned_concepts_multi_query(
+                    queries=sub_queries,
+                    project_id=project_id,
+                    limit_per_query=3,
+                    similarity_threshold=0.30
+                )
+
+                # PASO 3: Combinar, deduplicar, re-rankear
+                learned_concepts = self.result_combiner.combine(
+                    results=raw_results,
+                    max_results=7,
+                    min_books=2
+                )
+
+            except Exception as e:
+                # FALLBACK: Si Query Decomposition falla, usar búsqueda simple
+                logger.warning(
+                    "[MEMORY] Query Decomposition failed: %s. Using simple search.",
+                    str(e)
+                )
+                learned_concepts = await self.rag_service.search_learned_concepts(
+                    query=current_message,
+                    project_id=project_id,
+                    limit=5,
+                    similarity_threshold=0.35
+                )
+        elif current_message:
+            # Sin query_decomposer, usar búsqueda simple
             try:
                 learned_concepts = await self.rag_service.search_learned_concepts(
                     query=current_message,
                     project_id=project_id,
-                    limit=5,  # Aumentado de 3 a 5 para más contexto
-                    similarity_threshold=0.35  # Bajado de 0.65 a 0.35
-                )
-                logger.info(
-                    "[MEMORY] search_learned_concepts query=%s results=%s",
-                    current_message[:50], len(learned_concepts)
+                    limit=5,
+                    similarity_threshold=0.35
                 )
             except Exception as e:
-                # Don't fail if search_learned_concepts fails
                 logger.warning("[MEMORY] search_learned_concepts failed: %s", str(e))
 
         return {

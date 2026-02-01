@@ -53,7 +53,8 @@ class LLMService:
         prompt: str,
         system: str = "",
         max_tokens: int = 4096,
-        temperature: float = 0.7
+        temperature: float = 0.7,
+        model: str | None = None,
     ) -> str:
         """
         Generate text synchronously (for analysis, planning).
@@ -80,7 +81,7 @@ class LLMService:
         messages.append({"role": "user", "content": prompt})
 
         response = await self.client.chat.completions.create(
-            model=self.model,
+            model=model or self.model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature
@@ -101,7 +102,8 @@ class LLMService:
         prompt: str,
         system: str = "",
         max_tokens: int = 4096,
-        temperature: float = 0.7
+        temperature: float = 0.7,
+        model: str | None = None,
     ) -> AsyncIterator[str]:
         """
         Generate text with streaming (for real-time chat responses).
@@ -128,7 +130,7 @@ class LLMService:
         messages.append({"role": "user", "content": prompt})
 
         stream = await self.client.chat.completions.create(
-            model=self.model,
+            model=model or self.model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
@@ -148,7 +150,8 @@ class LLMService:
         self,
         messages: list[dict[str, str]],
         max_tokens: int = 4096,
-        temperature: float = 0.7
+        temperature: float = 0.7,
+        model: str | None = None,
     ) -> str:
         """
         Generate text with full conversation history.
@@ -186,7 +189,7 @@ class LLMService:
                 )
 
         response = await self.client.chat.completions.create(
-            model=self.model,
+            model=model or self.model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature
@@ -206,7 +209,8 @@ class LLMService:
         self,
         messages: list[dict[str, str]],
         max_tokens: int = 4096,
-        temperature: float = 0.7
+        temperature: float = 0.7,
+        model: str | None = None,
     ) -> AsyncIterator[str]:
         """
         Generate text with streaming and full conversation history.
@@ -244,7 +248,7 @@ class LLMService:
                 )
 
         stream = await self.client.chat.completions.create(
-            model=self.model,
+            model=model or self.model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
