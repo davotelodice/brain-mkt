@@ -494,3 +494,67 @@ Ranking (most relevant first):"""
             "documents": docs,
             "knowledge_base": kb_results
         }
+
+    # ================================================================
+    # NUEVO MÉTODO - Query Decomposition Support
+    # ================================================================
+
+    async def search_learned_concepts_multi_query(
+        self,
+        queries: list[str],
+        project_id: UUID,
+        limit_per_query: int = 3,
+        similarity_threshold: float = 0.30,
+    ) -> list[dict]:
+        """
+        Busca conceptos aprendidos con MÚLTIPLES queries en PARALELO.
+
+        Este método ejecuta search_learned_concepts() para cada query
+        de forma concurrente usando asyncio.gather, mejorando la latencia.
+
+        Args:
+            queries: Lista de queries (típicamente 3-5 del QueryDecomposer)
+            project_id: ID del proyecto
+            limit_per_query: Máximo resultados por query individual
+            similarity_threshold: Umbral mínimo (más bajo para diversidad)
+
+        Returns:
+            Lista combinada de todos los resultados (puede tener duplicados,
+            el ResultCombiner se encarga de deduplicar después)
+        """
+        import asyncio
+
+        if not queries:
+            logger.warning("[RAG] search_learned_concepts_multi_query: empty queries list")
+            return []
+
+        async def search_one(query: str) -> list[dict]:
+            """Ejecuta una búsqueda individual con manejo de errores."""
+            try:
+                return await self.search_learned_concepts(
+                    query=query,
+                    project_id=project_id,
+                    limit=limit_per_query,
+                    similarity_threshold=similarity_threshold
+                )
+            except Exception as e:
+                logger.warning(
+                    "[RAG] Multi-query search failed for '%s': %s",
+                    query[:50], str(e)
+                )
+                return []
+
+        tasks = [search_one(q) for q in queries]
+        results_lists = await asyncio.gather(*tasks)
+
+        all_results: list[dict] = []
+        for results in results_lists:
+            if results:
+                all_results.extend(results)
+
+        logger.info(
+            "[RAG] search_learned_concepts_multi_query: queries=%d total_results=%d",
+            len(queries), len(all_results)
+        )
+
+        return all_results
