@@ -173,6 +173,9 @@ class ContentGeneratorAgent(BaseAgent):
                 learned_concepts = context.get("learned_concepts", []) or []
                 learned_concepts_count = len(learned_concepts)
 
+                # Query Decomposition info (sub-queries generadas)
+                query_decomp = context.get("query_decomposition", {}) or {}
+
                 debug = {
                     "stage": "content_generation",
                     "mode": mode,
@@ -188,6 +191,8 @@ class ContentGeneratorAgent(BaseAgent):
                     "document_summaries_count": len(context.get("document_summaries", []) or []),
                     "learned_concepts_count": learned_concepts_count,  # NEW: Track book concepts
                     "tecnicas_aplicadas_count": tecnicas_aplicadas_count,
+                    # Query Decomposition - sub-queries generadas por método socrático
+                    "query_decomposition": query_decomp,
                     # Health check flags (prueba de vida automática)
                     "has_history": history_chars > 0,
                     "rag_used": rag_relevant_docs_total > 0,

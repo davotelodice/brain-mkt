@@ -33,6 +33,7 @@ export function ChatInterface({ chatId, onChatCreated }: ChatInterfaceProps) {
   const [selectedTraceRunIndex, setSelectedTraceRunIndex] = useState<number | null>(null)
   const [activeChatId, setActiveChatId] = useState<string | undefined>(chatId)
   const [selectedModel, setSelectedModel] = useState('gpt-4o-mini')
+  const [selectedProvider, setSelectedProvider] = useState<'openai' | 'openrouter'>('openai')
 
   // Sync activeChatId with prop
   useEffect(() => {
@@ -371,15 +372,47 @@ export function ChatInterface({ chatId, onChatCreated }: ChatInterfaceProps) {
 
       {/* Input area */}
       <div className="px-4 py-4 border-t border-gray-200 bg-white">
-        {/* Model selector */}
+        {/* Provider toggle + Model selector */}
         <div className="flex items-center gap-4 pb-3 max-w-4xl mx-auto">
+          {/* Provider toggle */}
+          <div className="flex rounded-lg border border-gray-300 overflow-hidden text-xs">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedProvider('openai')
+                setSelectedModel('gpt-4o-mini')
+              }}
+              className={`px-3 py-1.5 transition ${
+                selectedProvider === 'openai'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              OpenAI
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedProvider('openrouter')
+                setSelectedModel('anthropic/claude-sonnet-4')
+              }}
+              className={`px-3 py-1.5 transition ${
+                selectedProvider === 'openrouter'
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-white text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              OpenRouter
+            </button>
+          </div>
+          
           <ModelSelector
             value={selectedModel}
             onChange={setSelectedModel}
-            provider="openai"
+            provider={selectedProvider}
           />
           <span className="text-xs text-gray-400">
-            Modelo: {selectedModel}
+            {selectedModel}
           </span>
         </div>
         <div className="flex gap-3 items-end max-w-4xl mx-auto">

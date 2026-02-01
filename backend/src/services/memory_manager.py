@@ -126,6 +126,7 @@ class MemoryManager:
         # QUERY DECOMPOSITION: Búsqueda diversificada de conceptos
         # ================================================================
         learned_concepts: list[dict] = []
+        query_decomposition_info: dict = {}  # Info para trace/debug
 
         if current_message and self.query_decomposer:
             try:
@@ -156,6 +157,15 @@ class MemoryManager:
                     min_books=2
                 )
 
+                # Guardar info para trace
+                query_decomposition_info = {
+                    "used": True,
+                    "original_query": current_message[:100],
+                    "sub_queries": sub_queries,
+                    "raw_results_count": len(raw_results),
+                    "combined_results_count": len(learned_concepts),
+                }
+
             except Exception as e:
                 # FALLBACK: Si Query Decomposition falla, usar búsqueda simple
                 logger.warning(
@@ -168,6 +178,10 @@ class MemoryManager:
                     limit=5,
                     similarity_threshold=0.35
                 )
+                query_decomposition_info = {
+                    "used": False,
+                    "fallback_reason": str(e),
+                }
         elif current_message:
             # Sin query_decomposer, usar búsqueda simple
             try:
@@ -177,6 +191,10 @@ class MemoryManager:
                     limit=5,
                     similarity_threshold=0.35
                 )
+                query_decomposition_info = {
+                    "used": False,
+                    "reason": "query_decomposer not available",
+                }
             except Exception as e:
                 logger.warning("[MEMORY] search_learned_concepts failed: %s", str(e))
 
@@ -192,6 +210,8 @@ class MemoryManager:
             "document_summaries": document_summaries,
             # TAREA 5: Add learned concepts from books
             "learned_concepts": learned_concepts,
+            # Query Decomposition info para trace
+            "query_decomposition": query_decomposition_info,
         }
 
     async def add_message_to_short_term(

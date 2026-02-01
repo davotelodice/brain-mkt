@@ -15,11 +15,50 @@ import { useState } from 'react';
 
 // Modelos para OpenAI (cuando LLM_PROVIDER=openai en .env)
 const OPENAI_MODELS = [
+  // === MODELOS DE RAZONAMIENTO (o-series) ===
+  {
+    id: 'o3',
+    name: 'o3 🧠',
+    description: 'Razonamiento más avanzado',
+    costTier: 'high' as const,
+  },
+  {
+    id: 'o3-mini',
+    name: 'o3 Mini 🧠',
+    description: 'Razonamiento rápido y económico',
+    costTier: 'medium' as const,
+  },
+  {
+    id: 'o1',
+    name: 'o1 🧠',
+    description: 'Razonamiento profundo',
+    costTier: 'high' as const,
+  },
+  {
+    id: 'o1-mini',
+    name: 'o1 Mini 🧠',
+    description: 'Razonamiento compacto',
+    costTier: 'medium' as const,
+  },
+  {
+    id: 'o1-pro',
+    name: 'o1 Pro 🧠',
+    description: 'Razonamiento profesional',
+    costTier: 'high' as const,
+  },
+  // === GPT-4.5 / GPT-5 ===
+  {
+    id: 'gpt-4.5-preview',
+    name: 'GPT-4.5 Preview',
+    description: 'Preview del próximo modelo',
+    costTier: 'high' as const,
+  },
+  // === GPT-4o SERIES ===
   {
     id: 'gpt-4o',
     name: 'GPT-4o',
-    description: 'Más capaz, multimodal',
-    costTier: 'high' as const,
+    description: 'Multimodal, muy capaz',
+    costTier: 'medium' as const,
   },
   {
     id: 'gpt-4o-mini',
@@ -27,32 +66,62 @@ const OPENAI_MODELS = [
     description: 'Rápido y económico',
     costTier: 'low' as const,
   },
+  // === LEGACY ===
   {
     id: 'gpt-4-turbo',
     name: 'GPT-4 Turbo',
-    description: 'Balance velocidad/calidad',
+    description: 'Legacy, 128k context',
     costTier: 'medium' as const,
   },
 ];
 
 // Modelos para OpenRouter (cuando LLM_PROVIDER=openrouter en .env)
 const OPENROUTER_MODELS = [
+  // === CLAUDE 4.5 (Más recientes) ===
+  {
+    id: 'anthropic/claude-sonnet-4.5',
+    name: 'Claude Sonnet 4.5',
+    description: 'Mejor para agentes y código',
+    costTier: 'high' as const,
+  },
+  {
+    id: 'anthropic/claude-opus-4.5',
+    name: 'Claude Opus 4.5',
+    description: 'Razonamiento frontier',
+    costTier: 'high' as const,
+  },
+  // === CLAUDE 4 ===
+  {
+    id: 'anthropic/claude-sonnet-4',
+    name: 'Claude Sonnet 4',
+    description: 'Balance calidad/costo',
+    costTier: 'medium' as const,
+  },
+  // === CLAUDE 3.5 ===
   {
     id: 'anthropic/claude-3.5-sonnet',
     name: 'Claude 3.5 Sonnet',
-    description: 'Balance perfecto',
+    description: 'Versión estable anterior',
     costTier: 'medium' as const,
   },
+  // === CLAUDE 3 ===
   {
     id: 'anthropic/claude-3-opus',
     name: 'Claude 3 Opus',
-    description: 'Más potente de Claude',
+    description: 'El más potente de Claude 3',
     costTier: 'high' as const,
   },
   {
     id: 'anthropic/claude-3-haiku',
     name: 'Claude 3 Haiku',
-    description: 'Ultra rápido',
+    description: 'Ultra rápido y barato',
+    costTier: 'low' as const,
+  },
+  // === DEEPSEEK (via OpenRouter) ===
+  {
+    id: 'deepseek/deepseek-chat',
+    name: 'DeepSeek V3',
+    description: 'Chat económico y potente',
     costTier: 'low' as const,
   },
 ];
@@ -135,9 +204,9 @@ export function ModelSelector({
           {/* Overlay para cerrar al hacer click fuera */}
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
 
-          {/* Lista de modelos */}
-          <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-            <div className="p-2 border-b border-gray-100">
+          {/* Lista de modelos - se despliega hacia ARRIBA */}
+          <div className="absolute bottom-full left-0 mb-1 w-72 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
+            <div className="p-2 border-b border-gray-100 sticky top-0 bg-white">
               <span className="text-xs text-gray-500">
                 Provider: {provider === 'openrouter' ? 'OpenRouter' : 'OpenAI'}
               </span>

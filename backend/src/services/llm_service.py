@@ -1,5 +1,6 @@
 """LLM Service - Configurable provider (OpenAI/OpenRouter) with retry logic."""
 
+import logging
 import os
 from collections.abc import AsyncIterator
 from typing import cast
@@ -12,36 +13,69 @@ from tenacity import (
     wait_exponential,
 )
 
+logger = logging.getLogger(__name__)
+
+# Prefijos de modelos que requieren OpenRouter
+OPENROUTER_PREFIXES = ("anthropic/", "deepseek/", "meta-llama/", "google/", "mistral/")
+
 
 class LLMService:
     """
     Configurable LLM service supporting OpenAI and OpenRouter.
 
-    Provider selection via LLM_PROVIDER environment variable:
-    - "openai" (default): Uses OpenAI API directly
-    - "openrouter": Uses OpenRouter API (supports multiple models including Claude)
+    Provider selection:
+    - Default provider via LLM_PROVIDER environment variable
+    - Auto-detection: modelos con prefijo (anthropic/, deepseek/) usan OpenRouter
 
     Includes automatic retry with exponential backoff for transient errors.
     """
 
     def __init__(self):
-        """Initialize LLM service based on LLM_PROVIDER env var."""
-        self.provider = os.getenv("LLM_PROVIDER", "openai").lower()
+        """Initialize LLM service with BOTH clients available."""
+        self.default_provider = os.getenv("LLM_PROVIDER", "openai").lower()
 
-        if self.provider == "openai":
-            self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-            self.model = os.getenv("OPENAI_MODEL", "gpt-4o")
-        elif self.provider == "openrouter":
-            self.client = AsyncOpenAI(
-                api_key=os.getenv("OPENROUTER_API_KEY"),
-                base_url="https://openrouter.ai/api/v1"
-            )
+        # Cliente OpenAI (siempre disponible si hay API key)
+        openai_key = os.getenv("OPENAI_API_KEY")
+        self.openai_client = AsyncOpenAI(api_key=openai_key) if openai_key else None
+
+        # Cliente OpenRouter (siempre disponible si hay API key)
+        openrouter_key = os.getenv("OPENROUTER_API_KEY")
+        self.openrouter_client = AsyncOpenAI(
+            api_key=openrouter_key,
+            base_url="https://openrouter.ai/api/v1"
+        ) if openrouter_key else None
+
+        # Modelo default según provider configurado
+        if self.default_provider == "openrouter":
             self.model = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
+            self.client = self.openrouter_client
+            self.provider = "openrouter"
         else:
+            self.model = os.getenv("OPENAI_MODEL", "gpt-4o")
+            self.client = self.openai_client
+            self.provider = "openai"
+
+    def _get_client_for_model(self, model: str) -> tuple[AsyncOpenAI, str]:
+        """
+        Determina qué cliente usar según el modelo.
+
+        Returns:
+            tuple: (client, provider_name)
+        """
+        # Si el modelo tiene prefijo de OpenRouter, usar OpenRouter
+        if model.startswith(OPENROUTER_PREFIXES):
+            if not self.openrouter_client:
+                raise ValueError(
+                    f"Model '{model}' requires OpenRouter but OPENROUTER_API_KEY not set"
+                )
+            return self.openrouter_client, "openrouter"
+
+        # Modelos de OpenAI (gpt-*, o1-*, o3-*)
+        if not self.openai_client:
             raise ValueError(
-                f"Invalid LLM_PROVIDER: {self.provider}. "
-                "Must be 'openai' or 'openrouter'"
+                f"Model '{model}' requires OpenAI but OPENAI_API_KEY not set"
             )
+        return self.openai_client, "openai"
 
     @retry(
         stop=stop_after_attempt(3),
@@ -80,8 +114,12 @@ class LLMService:
 
         messages.append({"role": "user", "content": prompt})
 
-        response = await self.client.chat.completions.create(
-            model=model or self.model,
+        effective_model = model or self.model
+        client, provider = self._get_client_for_model(effective_model)
+        logger.info("[LLM] generate model=%s provider=%s", effective_model, provider)
+
+        response = await client.chat.completions.create(
+            model=effective_model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature
@@ -129,8 +167,12 @@ class LLMService:
 
         messages.append({"role": "user", "content": prompt})
 
-        stream = await self.client.chat.completions.create(
-            model=model or self.model,
+        effective_model = model or self.model
+        client, provider = self._get_client_for_model(effective_model)
+        logger.info("[LLM] stream model=%s provider=%s", effective_model, provider)
+
+        stream = await client.chat.completions.create(
+            model=effective_model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
@@ -188,8 +230,12 @@ class LLMService:
                     "Must be 'system', 'user', or 'assistant'"
                 )
 
-        response = await self.client.chat.completions.create(
-            model=model or self.model,
+        effective_model = model or self.model
+        client, provider = self._get_client_for_model(effective_model)
+        logger.info("[LLM] generate_with_messages model=%s provider=%s", effective_model, provider)
+
+        response = await client.chat.completions.create(
+            model=effective_model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature
@@ -247,8 +293,12 @@ class LLMService:
                     "Must be 'system', 'user', or 'assistant'"
                 )
 
-        stream = await self.client.chat.completions.create(
-            model=model or self.model,
+        effective_model = model or self.model
+        client, provider = self._get_client_for_model(effective_model)
+        logger.info("[LLM] stream_with_messages model=%s provider=%s", effective_model, provider)
+
+        stream = await client.chat.completions.create(
+            model=effective_model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=temperature,
