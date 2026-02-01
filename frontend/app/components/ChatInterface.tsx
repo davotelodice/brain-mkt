@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { MessageList } from './MessageList'
 import { DocumentUpload } from './DocumentUpload'
 import { AnalysisPanel } from './AnalysisPanel'
+import { ModelSelector } from './ModelSelector'
 import type { Message } from '@/lib/types'
 import { streamMessage, getMessages, createChat } from '@/lib/api-chat'
 
@@ -31,6 +32,7 @@ export function ChatInterface({ chatId, onChatCreated }: ChatInterfaceProps) {
   const [traceRuns, setTraceRuns] = useState<Array<{ startedAt: string; userMessage: string; events: unknown[] }>>([])
   const [selectedTraceRunIndex, setSelectedTraceRunIndex] = useState<number | null>(null)
   const [activeChatId, setActiveChatId] = useState<string | undefined>(chatId)
+  const [selectedModel, setSelectedModel] = useState('gpt-4o-mini')
 
   // Sync activeChatId with prop
   useEffect(() => {
@@ -129,7 +131,7 @@ export function ChatInterface({ chatId, onChatCreated }: ChatInterfaceProps) {
       setMessages((prev) => [...prev, tempAssistantMessage])
 
       // Stream response - use currentChatId (may be newly created)
-      for await (const chunk of streamMessage(currentChatId, userMessage)) {
+      for await (const chunk of streamMessage(currentChatId, userMessage, selectedModel)) {
         if (chunk.type === 'done') {
           break
         }
@@ -180,7 +182,7 @@ export function ChatInterface({ chatId, onChatCreated }: ChatInterfaceProps) {
     } finally {
       setIsStreaming(false)
     }
-  }, [input, isStreaming, activeChatId, onChatCreated])
+  }, [input, isStreaming, activeChatId, onChatCreated, selectedModel])
 
   // Handle Enter key
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -369,6 +371,17 @@ export function ChatInterface({ chatId, onChatCreated }: ChatInterfaceProps) {
 
       {/* Input area */}
       <div className="px-4 py-4 border-t border-gray-200 bg-white">
+        {/* Model selector */}
+        <div className="flex items-center gap-4 pb-3 max-w-4xl mx-auto">
+          <ModelSelector
+            value={selectedModel}
+            onChange={setSelectedModel}
+            provider="openai"
+          />
+          <span className="text-xs text-gray-400">
+            Modelo: {selectedModel}
+          </span>
+        </div>
         <div className="flex gap-3 items-end max-w-4xl mx-auto">
           <textarea
             value={input}
