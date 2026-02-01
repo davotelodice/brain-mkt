@@ -81,3 +81,7 @@ tmp/
 *.tmp
 *.bak
 *.swp
+
+# Personal/private folders (not for public repo)
+.serena/
+Context-Engineering-Intro/
