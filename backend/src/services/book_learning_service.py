@@ -101,6 +101,20 @@ class BookLearningService:
             learned_book = result.scalar_one_or_none()
             if not learned_book:
                 raise ValueError(f"Book with ID {book_id} not found")
+            
+            # FIX: Evitar reprocesamiento si ya está completado o en proceso
+            if learned_book.processing_status == "completed":
+                logger.info(
+                    "[BOOK] skip_already_completed book_id=%s title=%s",
+                    str(book_id), title
+                )
+                return learned_book
+            if learned_book.processing_status == "processing" and learned_book.processed_chunks > 0:
+                logger.info(
+                    "[BOOK] skip_already_processing book_id=%s progress=%s/%s",
+                    str(book_id), learned_book.processed_chunks, learned_book.total_chunks
+                )
+                return learned_book
         else:
             # Crear registro (fallback para compatibilidad)
             learned_book = MarketingLearnedBook(

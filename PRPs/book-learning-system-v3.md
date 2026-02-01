@@ -10,7 +10,7 @@ descripcion: "Sistema de aprendizaje progresivo que permite al agente 'estudiar'
 tipo: "Feature Addition"
 proyecto_base: "Marketing Second Brain (EXISTENTE)"
 score_confianza: "9/10"
-ultima_actualizacion: "Añadida TAREA 6.4 - Optimización de rendimiento (paralelo + Docker)"
+ultima_actualizacion: "Añadida TAREA 6.5 (Seguridad) y TAREA 6.6 (GitHub) - 2026-01-31"
 ```
 
 ---
@@ -1316,6 +1316,108 @@ docker stats --no-stream
 
 ---
 
+### TAREA 6.5: Auditoría de Seguridad y Preparación para GitHub
+
+**Herramientas:**
+- 📚 Skills: cc-skill-security-review, git-pushing
+
+**Objetivo:** Limpiar credenciales del historial de git y preparar proyecto para repositorio público.
+
+**Contexto técnico:**
+```yaml
+Problema detectado:
+  - .env con credenciales REALES estaba trackeado en git
+  - .env.example también contenía credenciales reales
+  - Historial de git contenía secretos en 29 commits
+  
+Credenciales comprometidas:
+  - OpenAI API Key (sk-proj-...)
+  - OpenRouter API Key (sk-or-v1-...)
+  - JWT_SECRET_KEY
+  - Supabase Service Role Key
+```
+
+**PARTE A: Remover archivos sensibles del tracking ✅**
+```bash
+git rm --cached .env .env.example frontend/.env.example
+```
+
+**PARTE B: Limpiar historial de git ✅**
+```bash
+git filter-branch --force --index-filter \
+  'git rm --cached --ignore-unmatch .env .env.example .env.local' \
+  --prune-empty --tag-name-filter cat -- --all
+
+git reflog expire --expire=now --all
+git gc --prune=now --aggressive
+```
+
+**PARTE C: Actualizar .gitignore ✅**
+- Agregadas reglas para `.env`, `.env.local`, `.env.*.local`
+- Agregadas reglas para claves privadas (*.pem, *.key)
+- Agregadas reglas para directorios secrets/
+
+**PARTE D: Crear .env.example seguro ✅**
+- Template con placeholders (`sk-your-openai-api-key-here`)
+- Sin credenciales reales
+- Documentación de cada variable
+
+**PARTE E: Verificación de seguridad ✅**
+```bash
+# Verificar que .env NO está trackeado
+git ls-files | grep -E "\.env"  # Solo debe mostrar .env.example
+
+# Verificar historial limpio
+git log --all --full-history -- .env  # No debe mostrar commits
+```
+
+**Estado: ✅ COMPLETADA (2026-01-31)**
+
+**⚠️ ACCIÓN PENDIENTE DEL USUARIO:**
+- Regenerar credenciales comprometidas (OpenAI, OpenRouter, JWT)
+- Llenar `.env` con nuevas credenciales
+
+---
+
+### TAREA 6.6: Crear Repositorio GitHub y Subir Proyecto
+
+**Herramientas:**
+- 🔧 MCP: user-github
+- 📚 Skills: git-pushing
+
+**Objetivo:** Crear repositorio público en GitHub y hacer push del proyecto limpio.
+
+**Pasos:**
+
+1. **Crear repositorio en GitHub usando MCP:**
+   ```
+   Nombre: brain-mkt
+   Visibilidad: public
+   Descripción: "Marketing Second Brain - AI-powered marketing knowledge assistant"
+   ```
+
+2. **Configurar remote y hacer push:**
+   ```bash
+   git remote add origin https://github.com/[USUARIO]/brain-mkt.git
+   git branch -M main
+   git push -u origin main --force  # Force porque reescribimos historial
+   ```
+
+3. **Verificar subida:**
+   - Confirmar que NO hay archivos .env en el repo
+   - Confirmar que .env.example está presente
+   - Verificar README y documentación
+
+**Criterios de aceptación:**
+- [ ] Repositorio creado como público
+- [ ] Código subido sin credenciales
+- [ ] .env.example presente con placeholders
+- [ ] .gitignore funcionando correctamente
+
+**Estado: ⏳ PENDIENTE**
+
+---
+
 ### TAREA 7: Testing y Documentación
 
 **Herramientas:**
@@ -1439,6 +1541,8 @@ Justificación:
 | T6.2: Markdown | - | content_generator_agent.py | Alta | ✅ |
 | T6.3: Chats vacíos | - | ChatPageContent.tsx, ChatInterface.tsx, Sidebar.tsx | Media | ✅ |
 | T6.4: Optimización | - | book_learning_service.py, docker-compose.yml | Alta | ✅ |
+| T6.5: Seguridad GitHub | .env.example, .gitignore | - | ⚡ CRÍTICA | ✅ |
+| T6.6: Subir a GitHub | - | - | Alta | ⏳ |
 | T7: Tests | tests/*.py, docs/*.md | README.md | Baja | ⏳ |
 
 **⚠️ ADVERTENCIAS CRÍTICAS:**
