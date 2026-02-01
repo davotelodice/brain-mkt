@@ -111,14 +111,20 @@ class MemoryManager:
 
         # 5. TAREA 5: Get learned concepts from books via RAG
         # PATRÓN: Similar to how we get relevant_docs above
+        # FIX: Bajado threshold de 0.65 a 0.35 porque embeddings de conceptos
+        #      tienen menor similitud que texto completo
         learned_concepts: list[dict] = []
         if current_message:
             try:
                 learned_concepts = await self.rag_service.search_learned_concepts(
                     query=current_message,
                     project_id=project_id,
-                    limit=3,  # Keep it focused
-                    similarity_threshold=0.65
+                    limit=5,  # Aumentado de 3 a 5 para más contexto
+                    similarity_threshold=0.35  # Bajado de 0.65 a 0.35
+                )
+                logger.info(
+                    "[MEMORY] search_learned_concepts query=%s results=%s",
+                    current_message[:50], len(learned_concepts)
                 )
             except Exception as e:
                 # Don't fail if search_learned_concepts fails

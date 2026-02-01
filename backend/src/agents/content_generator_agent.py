@@ -167,6 +167,10 @@ class ContentGeneratorAgent(BaseAgent):
                 rag_relevant_docs_total = len(relevant_docs)
                 training_summary_chars = prompt_debug.get("training_summary_chars", 0) or 0
 
+                # Count learned concepts from books
+                learned_concepts = context.get("learned_concepts", []) or []
+                learned_concepts_count = len(learned_concepts)
+                
                 debug = {
                     "stage": "content_generation",
                     "mode": mode,
@@ -180,11 +184,13 @@ class ContentGeneratorAgent(BaseAgent):
                     "rag_relevant_docs_total": rag_relevant_docs_total,
                     "rag_relevant_docs_by_type": counts,
                     "document_summaries_count": len(context.get("document_summaries", []) or []),
+                    "learned_concepts_count": learned_concepts_count,  # NEW: Track book concepts
                     "tecnicas_aplicadas_count": tecnicas_aplicadas_count,
                     # Health check flags (prueba de vida automática)
                     "has_history": history_chars > 0,
                     "rag_used": rag_relevant_docs_total > 0,
                     "training_injected": training_summary_chars > 0,
+                    "books_knowledge_used": learned_concepts_count > 0,  # NEW: Health check
                     **prompt_debug,
                 }
 
