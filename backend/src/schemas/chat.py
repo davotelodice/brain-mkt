@@ -26,6 +26,11 @@ class SendMessageRequest(BaseModel):
     """Send message request."""
     content: str = Field(..., min_length=1, max_length=5000, description="Message content")
     model: str | None = Field(None, description="LLM model override (e.g., 'gpt-4o-mini')")
+    attachment_content: str | None = Field(
+        None,
+        max_length=50000,
+        description="Contenido del archivo adjunto (texto plano, max 50k chars)"
+    )
 
 
 class Message(BaseModel):

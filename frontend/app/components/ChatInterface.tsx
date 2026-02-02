@@ -1,12 +1,16 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { MessageList } from './MessageList'
 import { DocumentUpload } from './DocumentUpload'
 import { AnalysisPanel } from './AnalysisPanel'
 import { ModelSelector } from './ModelSelector'
 import type { Message } from '@/lib/types'
 import { streamMessage, getMessages, createChat } from '@/lib/api-chat'
+
+// Tipos de archivo permitidos para adjuntar
+const ALLOWED_ATTACHMENT_TYPES = ['.txt', '.md']
+const MAX_ATTACHMENT_SIZE = 500 * 1024 // 500KB
 
 interface ChatInterfaceProps {
   chatId?: string  // Optional - can be undefined for new chat
@@ -34,6 +38,11 @@ export function ChatInterface({ chatId, onChatCreated }: ChatInterfaceProps) {
   const [activeChatId, setActiveChatId] = useState<string | undefined>(chatId)
   const [selectedModel, setSelectedModel] = useState('gpt-4o-mini')
   const [selectedProvider, setSelectedProvider] = useState<'openai' | 'openrouter'>('openai')
+  
+  // Estado para archivo adjunto
+  const [attachedFile, setAttachedFile] = useState<File | null>(null)
+  const [attachedContent, setAttachedContent] = useState<string | null>(null)
+  const attachmentInputRef = useRef<HTMLInputElement>(null)
 
   // Sync activeChatId with prop
   useEffect(() => {
@@ -64,12 +73,57 @@ export function ChatInterface({ chatId, onChatCreated }: ChatInterfaceProps) {
     loadMessages()
   }, [activeChatId])
 
+  // Handle file attachment
+  const handleAttachFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    const fileExt = '.' + file.name.split('.').pop()?.toLowerCase()
+    if (!ALLOWED_ATTACHMENT_TYPES.includes(fileExt)) {
+      setError(`Tipo de archivo no permitido. Permitidos: ${ALLOWED_ATTACHMENT_TYPES.join(', ')}`)
+      return
+    }
+
+    // Validate file size
+    if (file.size > MAX_ATTACHMENT_SIZE) {
+      setError(`Archivo muy grande. Máximo: ${MAX_ATTACHMENT_SIZE / 1024}KB`)
+      return
+    }
+
+    // Read file content
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const content = event.target?.result as string
+      setAttachedFile(file)
+      setAttachedContent(content)
+    }
+    reader.onerror = () => {
+      setError('Error al leer el archivo')
+    }
+    reader.readAsText(file)
+
+    // Reset input
+    if (attachmentInputRef.current) {
+      attachmentInputRef.current.value = ''
+    }
+  }, [])
+
+  // Remove attached file
+  const handleRemoveAttachment = useCallback(() => {
+    setAttachedFile(null)
+    setAttachedContent(null)
+  }, [])
+
   // Handle message send with streaming
   const handleSend = useCallback(async () => {
     if (!input.trim() || isStreaming) return
 
     const userMessage = input.trim()
+    const currentAttachment = attachedContent // Capture before clearing
     setInput('')
+    setAttachedFile(null)
+    setAttachedContent(null)
     setError(null)
     
     // ✅ TAREA 6.3: Create chat on first message if none exists
@@ -132,7 +186,7 @@ export function ChatInterface({ chatId, onChatCreated }: ChatInterfaceProps) {
       setMessages((prev) => [...prev, tempAssistantMessage])
 
       // Stream response - use currentChatId (may be newly created)
-      for await (const chunk of streamMessage(currentChatId, userMessage, selectedModel)) {
+      for await (const chunk of streamMessage(currentChatId, userMessage, selectedModel, currentAttachment)) {
         if (chunk.type === 'done') {
           break
         }
@@ -183,7 +237,7 @@ export function ChatInterface({ chatId, onChatCreated }: ChatInterfaceProps) {
     } finally {
       setIsStreaming(false)
     }
-  }, [input, isStreaming, activeChatId, onChatCreated, selectedModel])
+  }, [input, isStreaming, activeChatId, onChatCreated, selectedModel, attachedContent])
 
   // Handle Enter key
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -415,12 +469,55 @@ export function ChatInterface({ chatId, onChatCreated }: ChatInterfaceProps) {
             {selectedModel}
           </span>
         </div>
+        {/* Attached file preview */}
+        {attachedFile && (
+          <div className="flex items-center gap-2 pb-2 max-w-4xl mx-auto">
+            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+              <span className="text-blue-600">📎</span>
+              <span className="text-blue-800 font-medium">{attachedFile.name}</span>
+              <span className="text-blue-500 text-xs">
+                ({Math.round(attachedFile.size / 1024)}KB)
+              </span>
+              <button
+                type="button"
+                onClick={handleRemoveAttachment}
+                className="ml-2 text-blue-400 hover:text-red-500 transition"
+                title="Quitar archivo"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-3 items-end max-w-4xl mx-auto">
+          {/* Hidden file input */}
+          <input
+            ref={attachmentInputRef}
+            type="file"
+            accept={ALLOWED_ATTACHMENT_TYPES.join(',')}
+            onChange={handleAttachFile}
+            className="hidden"
+            id="message-attachment"
+          />
+          
+          {/* Attach button */}
+          <label
+            htmlFor="message-attachment"
+            className="flex items-center justify-center w-12 h-12 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 hover:border-blue-400 transition"
+            title="Adjuntar archivo (.txt, .md)"
+          >
+            <span className="text-xl text-gray-500">📎</span>
+          </label>
+
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Escribe tu mensaje... (Enter para enviar, Shift+Enter para nueva línea)"
+            placeholder={attachedFile 
+              ? "Escribe tu petición sobre el archivo adjunto..."
+              : "Escribe tu mensaje... (Enter para enviar, Shift+Enter para nueva línea)"
+            }
             disabled={isStreaming}
             rows={1}
             className="flex-1 resize-none border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition disabled:opacity-50 disabled:cursor-not-allowed"

@@ -32,6 +32,7 @@ class ContentGeneratorAgent(BaseAgent):
         user_message: str,
         context_override: dict | None = None,
         model: str | None = None,
+        attachment_content: str | None = None,
     ) -> dict:
         """
         Generate content ideas based on buyer persona and RAG techniques.
@@ -40,6 +41,9 @@ class ContentGeneratorAgent(BaseAgent):
             chat_id: Chat ID
             project_id: Project ID
             user_message: User's content request (e.g., "ideas de contenido para TikTok")
+            context_override: Pre-computed context to avoid double RAG
+            model: LLM model override
+            attachment_content: Contenido del archivo adjunto (texto plano)
 
         Returns:
             {
@@ -107,6 +111,22 @@ class ContentGeneratorAgent(BaseAgent):
                 f"{user_message}\n\n"
                 f"INSTRUCCIÓN: No generes ideas nuevas. Desarrolla SOLO las ideas #{nums} de tu respuesta anterior "
                 f"con guion/diálogo completo listo para grabar."
+            )
+
+        # Agregar documento adjunto al mensaje si existe
+        if attachment_content:
+            attachment_section = (
+                "\n\n---DOCUMENTO ADJUNTO POR EL USUARIO---\n"
+                "El usuario ha adjuntado el siguiente documento para que lo analices "
+                "junto con su petición:\n\n"
+                f"{attachment_content[:30000]}\n"
+                "---FIN DOCUMENTO ADJUNTO---\n\n"
+                "IMPORTANTE: Basa tu respuesta en el contenido de este documento."
+            )
+            final_user_message = final_user_message + attachment_section
+            logger.info(
+                "[AGENT] attachment_content added, chars=%s",
+                len(attachment_content)
             )
 
         messages = self.memory.format_messages_from_memory(

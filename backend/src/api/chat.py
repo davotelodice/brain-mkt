@@ -292,6 +292,7 @@ async def stream_message(
                 project_id=user.project_id,
                 user_message=request.content,
                 model=request.model,
+                attachment_content=request.attachment_content,
             ):
                 # Parse to accumulate final content
                 try:

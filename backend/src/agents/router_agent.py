@@ -149,6 +149,7 @@ class RouterAgent(BaseAgent):
         project_id: UUID,
         user_message: str,
         model: str | None = None,
+        attachment_content: str | None = None,
     ):  # type: ignore[return]
         """
         Process message and stream response in real-time.
@@ -162,6 +163,8 @@ class RouterAgent(BaseAgent):
             chat_id: Chat ID
             project_id: Project ID
             user_message: User's message
+            model: LLM model override
+            attachment_content: Contenido del archivo adjunto (texto plano)
 
         Yields:
             JSON chunks with streaming data:
@@ -250,6 +253,7 @@ class RouterAgent(BaseAgent):
                 user_message,
                 context_override=context,
                 model=model,
+                attachment_content=attachment_content,
             )
 
             if debug_enabled and isinstance(result, dict) and result.get("debug"):
