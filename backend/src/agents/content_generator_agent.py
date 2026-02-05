@@ -137,14 +137,12 @@ class ContentGeneratorAgent(BaseAgent):
 
         # 6. Generate content ideas with full conversation history
         try:
-            # Calculate approximate tokens in messages to ensure we have enough for response
-            # Rough estimate: 1 token ≈ 4 characters
+            # Rough estimate: 1 token ≈ 4 characters (solo para log)
             total_chars = sum(len(str(msg.get("content", ""))) for msg in messages)
             estimated_input_tokens = total_chars // 4
 
-            # Reserve tokens for response (ensure at least 2000 tokens for output)
-            # Most models have 128k context, but we'll be conservative
-            max_tokens = min(6000, 8000 - estimated_input_tokens) if estimated_input_tokens < 8000 else 2000
+            # Respuesta larga: Opus 4.5 / modelos 128k+ pueden generar mucho. Fijo 16k tokens de salida.
+            max_tokens = 16_384
 
             logger.info(f"Generating with max_tokens={max_tokens} (estimated input: {estimated_input_tokens} tokens)")
 

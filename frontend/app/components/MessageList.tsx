@@ -29,15 +29,29 @@ export function MessageList({ messages, isStreaming = false }: MessageListProps)
   if (messages.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center p-8">
-        <div className="text-center text-gray-500">
-          <div className="text-4xl mb-4">💬</div>
-          <h3 className="text-lg font-semibold text-gray-700 mb-2">
-            No hay mensajes aún
-          </h3>
-          <p className="text-sm">
-            Comienza una conversación escribiendo un mensaje
-          </p>
-        </div>
+        {isStreaming ? (
+          <div className="text-center text-gray-500">
+            <div className="flex justify-center mb-4">
+              <div className="w-10 h-10 border-4 border-blue-300 border-t-blue-600 rounded-full animate-spin" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-700 mb-2">
+              Generando la primera respuesta...
+            </h3>
+            <p className="text-sm">
+              Esto puede tardar unos segundos mientras preparo el contexto inicial.
+            </p>
+          </div>
+        ) : (
+          <div className="text-center text-gray-500">
+            <div className="text-4xl mb-4">💬</div>
+            <h3 className="text-lg font-semibold text-gray-700 mb-2">
+              No hay mensajes aún
+            </h3>
+            <p className="text-sm">
+              Comienza una conversación escribiendo un mensaje
+            </p>
+          </div>
+        )}
       </div>
     )
   }
