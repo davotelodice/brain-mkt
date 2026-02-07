@@ -7,7 +7,8 @@ Generar un PRP completo para implementación de features con investigación exha
 **IMPORTANTE**: Este comando usa el nuevo template `prp_base_nuevo.md` que integra:
 - 🎯 **MCP Archon**: Base de datos RAG con documentación oficial (PRIORIDAD)
 - ⚡ **MCP Serena**: Análisis simbólico de código (OBLIGATORIO)
-- 📚 **Skills**: Por fase del proyecto (Planificación, Desarrollo, Testing, etc.)
+- **MCP FAL**: ver documentacion oficial de la api de video (en caso de requerirse para el proyecto)
+- 📚 **Skills**: Por fase del proyecto (Planificación, Desarrollo, Testing, etc.) /home/david/brain-mkt/skills_index.json
 
 ---
 
